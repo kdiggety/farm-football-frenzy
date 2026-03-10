@@ -16,7 +16,7 @@ const CONFIG = {
   winScore: 5,
   playerRadius: 20,
   ballRadius: 9,
-  playerSpeed: 250,
+  playerSpeed: 168.328125,
   cpuSpeed: 125, // Slightly slower than player
   possessionPickupLockMs: 220,
   scorePauseMs: 1400
