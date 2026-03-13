@@ -42,16 +42,145 @@ function drawField() {
   // Yard lines
   ctx.lineWidth = 2;
   for (let i = 1; i < 10; i++) {
-    const x = FIELD.x + (FIELD.width / 10) * i;
+    const playableWidth = FIELD.width - FIELD.endZoneWidth * 2;
+    const segment = playableWidth / 10;
+    const x = FIELD.x + FIELD.endZoneWidth + segment * i;
     ctx.beginPath();
     ctx.moveTo(x, FIELD.y + 18);
     ctx.lineTo(x, FIELD.y + FIELD.height - 18);
     ctx.stroke();
+
+    // Yard numbers (10 to 50 from each end zone toward midfield)
+    const yardsFromLeft = (i * 10);
+    const yardNumber = yardsFromLeft <= 50 ? yardsFromLeft : 100 - yardsFromLeft;
+    if (yardNumber > 0 && yardNumber <= 50) {
+      ctx.fillStyle = COLORS.line;
+      ctx.font = "bold 16px Arial";
+      ctx.textAlign = "center";
+      // Top numbers
+      ctx.fillText(String(yardNumber), x, FIELD.y + 40);
+      // Bottom numbers
+      ctx.fillText(String(yardNumber), x, FIELD.y + FIELD.height - 22);
+    }
   }
 
-  // Midfield circle
+  // Goal posts: crossbar runs along goal line (vertical on canvas), uprights extend into end zone (facing the field)
+  const goalPostY = FIELD.y + FIELD.height / 2;
+  const crossbarHalfH = 32;
+  const crossbarThick = 5;
+  const uprightLength = 14;
+  const uprightThick = 5;
+  const postColor = "#facc15";
+
+  function drawGoalPost(goalLineX, intoEndZoneDir) {
+    // Crossbar (vertical on canvas = runs sideline to sideline like a real goal line)
+    drawRect(goalLineX - crossbarThick / 2, goalPostY - crossbarHalfH, crossbarThick, crossbarHalfH * 2, postColor);
+    // Top upright (extends into end zone)
+    drawRect(goalLineX - (intoEndZoneDir > 0 ? 0 : uprightLength), goalPostY - crossbarHalfH - uprightThick, uprightLength, uprightThick, postColor);
+    // Bottom upright
+    drawRect(goalLineX - (intoEndZoneDir > 0 ? 0 : uprightLength), goalPostY + crossbarHalfH, uprightLength, uprightThick, postColor);
+  }
+
+  // Left post: goal line at back of left end zone, uprights extend left (into that end zone), opening faces field (right)
+  const leftGoalLineX = FIELD.x + 14;
+  // Right post: goal line at back of right end zone, uprights extend right (into that end zone), opening faces field (left)
+  const rightGoalLineX = FIELD.x + FIELD.width - 14;
+  drawGoalPost(leftGoalLineX, -1);
+  drawGoalPost(rightGoalLineX, 1);
+
+  // Midfield barn logo (standard but detailed)
+  const midX = FIELD.x + FIELD.width / 2;
+  const midY = FIELD.y + FIELD.height / 2;
+
+  // Ground shadow ellipse for logo
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
-  ctx.arc(FIELD.x + FIELD.width / 2, FIELD.y + FIELD.height / 2, 44, 0, Math.PI * 2);
+  ctx.ellipse(midX, midY + 30, 70, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Barn body (classic rectangle)
+  const barnWidth = 100;
+  const barnHeight = 70;
+  const barnX = midX - barnWidth / 2;
+  const barnY = midY - barnHeight / 2 + 4;
+  ctx.fillStyle = COLORS.barn;
+  ctx.fillRect(barnX, barnY, barnWidth, barnHeight);
+
+  // Triangular roof
+  ctx.beginPath();
+  ctx.moveTo(barnX - 6, barnY);
+  ctx.lineTo(midX, barnY - 32);
+  ctx.lineTo(barnX + barnWidth + 6, barnY);
+  ctx.closePath();
+  ctx.fillStyle = "#b91c1c";
+  ctx.fill();
+
+  // Roof outline
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Barn outline
+  ctx.strokeRect(barnX, barnY, barnWidth, barnHeight);
+
+  // Vertical siding planks
+  ctx.strokeStyle = "#fca5a5";
+  ctx.lineWidth = 1.5;
+  for (let sx = barnX + 6; sx < barnX + barnWidth - 6; sx += 8) {
+    ctx.beginPath();
+    ctx.moveTo(sx, barnY + 4);
+    ctx.lineTo(sx, barnY + barnHeight - 4);
+    ctx.stroke();
+  }
+
+  // Loft window (rounded rectangle)
+  const loftW = 26;
+  const loftH = 18;
+  const loftX = midX - loftW / 2;
+  const loftY = barnY + 16;
+  ctx.fillStyle = "#fef3c7";
+  ctx.fillRect(loftX, loftY, loftW, loftH);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(loftX, loftY, loftW, loftH);
+
+  // Loft window mullions
+  ctx.beginPath();
+  ctx.moveTo(loftX, loftY + loftH / 2);
+  ctx.lineTo(loftX + loftW, loftY + loftH / 2);
+  ctx.moveTo(loftX + loftW / 2, loftY);
+  ctx.lineTo(loftX + loftW / 2, loftY + loftH);
+  ctx.stroke();
+
+  // Main double doors
+  const doorWidth = 40;
+  const doorHeight = 34;
+  const doorX = midX - doorWidth / 2;
+  const doorY = barnY + barnHeight - doorHeight - 6;
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(doorX, doorY, doorWidth, doorHeight);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(doorX, doorY, doorWidth, doorHeight);
+
+  // Door center split
+  ctx.beginPath();
+  ctx.moveTo(midX, doorY);
+  ctx.lineTo(midX, doorY + doorHeight);
+  ctx.stroke();
+
+  // Classic X-braces on each door
+  ctx.beginPath();
+  // Left door X
+  ctx.moveTo(doorX, doorY);
+  ctx.lineTo(midX, doorY + doorHeight);
+  ctx.moveTo(midX, doorY);
+  ctx.lineTo(doorX, doorY + doorHeight);
+  // Right door X
+  ctx.moveTo(midX, doorY);
+  ctx.lineTo(doorX + doorWidth, doorY + doorHeight);
+  ctx.moveTo(doorX + doorWidth, doorY);
+  ctx.lineTo(midX, doorY + doorHeight);
   ctx.stroke();
 
   // Fence posts
@@ -76,11 +205,16 @@ function drawField() {
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("BARNABY DEFENDS", FIELD.x + FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
+  ctx.save();
+  ctx.translate(FIELD.x + FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("BARNABY", 0, 0);
+  ctx.restore();
+
   ctx.save();
   ctx.translate(FIELD.x + FIELD.width - FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
-  ctx.rotate(Math.PI);
-  ctx.fillText("PIG DEFENDS", 0, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.fillText("PIG", 0, 0);
   ctx.restore();
 }
 
@@ -222,14 +356,113 @@ function drawCenterMessage(title, subtitle) {
   ctx.fillText(subtitle, canvas.width / 2, 285);
 }
 
+function drawMenu() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 42px Arial";
+  ctx.fillText("Farm Football Frenzy", canvas.width / 2, 160);
+  ctx.font = "18px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Choose a mode", canvas.width / 2, 210);
+
+  const g = MENU_BUTTONS.gameMode;
+  const pm = MENU_BUTTONS.passingMode;
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(g.x, g.y, g.w, g.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(g.x, g.y, g.w, g.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Game Mode", g.x + g.w / 2, g.y + g.h / 2 + 8);
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(pm.x, pm.y, pm.w, pm.h);
+  ctx.strokeRect(pm.x, pm.y, pm.w, pm.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Passing Mode", pm.x + pm.w / 2, pm.y + pm.h / 2 + 8);
+
+  ctx.font = "14px Arial";
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillText("Game Mode: Run with the ball. Passing Mode: Click to throw.", canvas.width / 2, 450);
+}
+
+function drawPauseMenu() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fillRect(200, 180, 560, 240);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(200, 180, 560, 240);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 32px Arial";
+  ctx.fillText("Paused", canvas.width / 2, 230);
+  ctx.font = "18px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Press ESC again to resume", canvas.width / 2, 265);
+
+  const res = PAUSE_MENU_BUTTONS.resume;
+  const home = PAUSE_MENU_BUTTONS.home;
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(res.x, res.y, res.w, res.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(res.x, res.y, res.w, res.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(home.x, home.y, home.w, home.h);
+  ctx.strokeRect(home.x, home.y, home.w, home.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Back to Home Menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (game.state === "menu") {
+    drawMenu();
+    return;
+  }
 
   drawField();
   drawScoreboard();
   drawPlayer(player1, "Barnaby", "#bfdbfe");
   drawPlayer(player2, "Professor Pig", "#fbcfe8");
+  drawPlayer(allyHorse, "Sir Neigh-a-Lot", "#fed7aa");
+  drawPlayer(allyDonkey, "Deputy Hee-Haw", "#bbf7d0");
   drawBall();
+
+  if (game.state === "pauseMenu") {
+    drawPauseMenu();
+    return;
+  }
+
+  if (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) {
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(player1.x, player1.y);
+    ctx.lineTo(game.mouseX, game.mouseY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(game.mouseX, game.mouseY, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fbbf24";
+    ctx.stroke();
+  }
 
   if (game.state === "scorePause" && game.scoredBy) {
     const scorerName = game.scoredBy === player1 ? "Barnaby scores!" : "Professor Pig scores!";

@@ -15,6 +15,11 @@ function circleTouch(a, b) {
   return distance(a.x, a.y, b.x, b.y) <= a.radius + b.radius;
 }
 
+function circleTouchSteal(a, b) {
+  const maxDistance = (a.radius + b.radius) * CONFIG.stealDistanceMultiplier;
+  return distance(a.x, a.y, b.x, b.y) <= maxDistance;
+}
+
 function moveToward(entity, targetX, targetY, speed, dt) {
   const dx = targetX - entity.x;
   const dy = targetY - entity.y;
@@ -41,6 +46,7 @@ function setBallFreeAtMidfield() {
 }
 
 function updateBallPosition() {
+  if (ball.inFlight) return;
   if (ball.carrier) {
     ball.x = ball.carrier.x;
     ball.y = ball.carrier.y - ball.carrier.radius - 8;
@@ -57,8 +63,17 @@ function resetPositions() {
   player2.x = FIELD.x + FIELD.width - 170;
   player2.y = FIELD.y + FIELD.height / 2;
 
+  allyHorse.x = player1.x - 60;
+  allyHorse.y = player1.y - 40;
+
+  allyDonkey.x = player2.x + 60;
+  allyDonkey.y = player2.y + 40;
+
   setBallFreeAtMidfield();
+  ball.inFlight = false;
   game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
 }
 
 function restartGame() {
@@ -69,6 +84,9 @@ function restartGame() {
   game.scorePauseTimer = 0;
   game.scoredBy = null;
   game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
+  ball.inFlight = false;
   resetPositions();
 }
 
@@ -97,15 +115,56 @@ function updateCPU(dt) {
   clampPlayerToField(player2);
 }
 
+function updateAllies(dt) {
+  // Horse helps Barnaby's team
+  let horseTargetX = player1.x;
+  let horseTargetY = player1.y;
+
+  if (ball.carrier === player1) {
+    horseTargetX = player1.x;
+    horseTargetY = player1.y;
+  } else if (ball.carrier === player2) {
+    horseTargetX = ball.x;
+    horseTargetY = ball.y;
+  } else if (ball.carrier === null) {
+    horseTargetX = ball.x;
+    horseTargetY = ball.y;
+  }
+
+  moveToward(allyHorse, horseTargetX, horseTargetY, allyHorse.speed, dt);
+  clampPlayerToField(allyHorse);
+
+  // Donkey helps Professor Pig's team
+  let donkeyTargetX = player2.x;
+  let donkeyTargetY = player2.y;
+
+  if (ball.carrier === player2) {
+    donkeyTargetX = player2.x;
+    donkeyTargetY = player2.y;
+  } else if (ball.carrier === player1) {
+    donkeyTargetX = ball.x;
+    donkeyTargetY = ball.y;
+  } else if (ball.carrier === null) {
+    donkeyTargetX = ball.x;
+    donkeyTargetY = ball.y;
+  }
+
+  moveToward(allyDonkey, donkeyTargetX, donkeyTargetY, allyDonkey.speed, dt);
+  clampPlayerToField(allyDonkey);
+}
+
 // =========================================================
 // Game Logic
 // =========================================================
 function tryPickupBall() {
-  if (game.possessionLockTimer > 0 || ball.carrier !== null) {
+  if (ball.inFlight || game.possessionLockTimer > 0 || ball.carrier !== null) {
     return;
   }
 
   if (circleTouch(player1, ball)) {
+    if (game.reacquireCooldownP1 > 0) {
+      return;
+    }
     ball.carrier = player1;
     game.possessionLockTimer = CONFIG.possessionPickupLockMs;
     updateBallPosition();
@@ -113,6 +172,9 @@ function tryPickupBall() {
   }
 
   if (circleTouch(player2, ball)) {
+    if (game.reacquireCooldownP2 > 0) {
+      return;
+    }
     ball.carrier = player2;
     game.possessionLockTimer = CONFIG.possessionPickupLockMs;
     updateBallPosition();
@@ -120,15 +182,30 @@ function tryPickupBall() {
 }
 
 function handleCarrierCollisionSteal() {
-  if (game.possessionLockTimer > 0) {
+  if (ball.inFlight || game.possessionLockTimer > 0) {
     return;
   }
 
-  if (ball.carrier === player1 && circleTouch(player1, player2)) {
+  // Player 2 trying to steal from Player 1
+  if (ball.carrier === player1 && circleTouchSteal(player1, player2)) {
+    // If Player 2 recently lost the ball, they can't immediately take it back
+    if (game.reacquireCooldownP2 > 0) {
+      return;
+    }
+    // Player1 loses the ball, apply cooldown before they can take it back
+    game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
     ball.carrier = player2;
     game.possessionLockTimer = CONFIG.possessionPickupLockMs;
     updateBallPosition();
-  } else if (ball.carrier === player2 && circleTouch(player1, player2)) {
+  }
+  // Player 1 trying to steal from Player 2
+  else if (ball.carrier === player2 && circleTouchSteal(player1, player2)) {
+    // If Player 1 recently lost the ball, they can't immediately take it back
+    if (game.reacquireCooldownP1 > 0) {
+      return;
+    }
+    // Player2 loses the ball, apply cooldown before they can take it back
+    game.reacquireCooldownP2 = CONFIG.reacquireCooldownMs;
     ball.carrier = player1;
     game.possessionLockTimer = CONFIG.possessionPickupLockMs;
     updateBallPosition();
@@ -136,7 +213,7 @@ function handleCarrierCollisionSteal() {
 }
 
 function checkTouchdown() {
-  if (game.state !== "playing" || !ball.carrier) return;
+  if (game.state !== "playing" || ball.inFlight || !ball.carrier) return;
 
   const leftEndZoneRight = FIELD.x + FIELD.endZoneWidth;
   const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
@@ -169,8 +246,24 @@ function scorePoint(scorer) {
 }
 
 function updatePlaying(dt) {
-  updatePlayerInput(dt);
-  updateCPU(dt);
+  if (game.mode === "passing" && ball.inFlight) {
+    const dx = ball.targetX - ball.x;
+    const dy = ball.targetY - ball.y;
+    const dist = Math.hypot(dx, dy);
+    const move = CONFIG.passSpeed * dt;
+    if (dist <= move || dist < 8) {
+      ball.x = ball.targetX;
+      ball.y = ball.targetY;
+      ball.inFlight = false;
+    } else {
+      ball.x += (dx / dist) * move;
+      ball.y += (dy / dist) * move;
+    }
+  } else {
+    updatePlayerInput(dt);
+    updateCPU(dt);
+    updateAllies(dt);
+  }
 
   if (game.possessionLockTimer > 0) {
     game.possessionLockTimer -= dt * 1000;
@@ -179,8 +272,24 @@ function updatePlaying(dt) {
     }
   }
 
-  tryPickupBall();
-  handleCarrierCollisionSteal();
+  if (game.reacquireCooldownP1 > 0) {
+    game.reacquireCooldownP1 -= dt * 1000;
+    if (game.reacquireCooldownP1 < 0) {
+      game.reacquireCooldownP1 = 0;
+    }
+  }
+
+  if (game.reacquireCooldownP2 > 0) {
+    game.reacquireCooldownP2 -= dt * 1000;
+    if (game.reacquireCooldownP2 < 0) {
+      game.reacquireCooldownP2 = 0;
+    }
+  }
+
+  if (!ball.inFlight) {
+    tryPickupBall();
+    handleCarrierCollisionSteal();
+  }
   updateBallPosition();
   checkTouchdown();
 }
@@ -196,10 +305,15 @@ function updateScorePause(dt) {
 }
 
 function update(dt) {
+  if (game.state === "menu" || game.state === "pauseMenu") {
+    return;
+  }
   if (game.state === "playing") {
     updatePlaying(dt);
   } else if (game.state === "scorePause") {
     updateScorePause(dt);
+  } else if (game.state === "paused") {
+    // Do nothing while paused; keep scene rendered as-is
   } else if (game.state === "gameOver") {
     updateBallPosition();
   }
@@ -220,8 +334,7 @@ function gameLoop(timestamp) {
 }
 
 // =========================================================
-// Start Game
+// Start (menu first; game starts when mode is chosen)
 // =========================================================
-restartGame();
 requestAnimationFrame(gameLoop);
 
