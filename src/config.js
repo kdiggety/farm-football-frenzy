@@ -14,22 +14,32 @@ const FIELD = {
 
 // Menu button layout (canvas coordinates) for hit testing
 const MENU_BUTTONS = {
-  gameMode:    { x: 330, y: 260, w: 300, h: 56 },
-  passingMode: { x: 330, y: 340, w: 300, h: 56 }
+  gameMode:  { x: 330, y: 240, w: 300, h: 56 },
+  passingMode: { x: 330, y: 320, w: 300, h: 56 },
+  playMode: { x: 330, y: 400, w: 300, h: 56 }
 };
 
 // Pause overlay menu (shown when Escape is pressed during a game)
 const PAUSE_MENU_BUTTONS = {
-  resume:  { x: 330, y: 260, w: 300, h: 56 },
-  home:    { x: 330, y: 340, w: 300, h: 56 }
+  resume:   { x: 330, y: 240, w: 300, h: 56 },
+  playMode: { x: 330, y: 320, w: 300, h: 56 },
+  home:     { x: 330, y: 400, w: 300, h: 56 }
+};
+
+// Play Mode — play selection (before each down)
+const PLAY_SELECT_BUTTONS = {
+  sweepRight: { x: 330, y: 280, w: 300, h: 56 },
+  sweepLeft:  { x: 330, y: 348, w: 300, h: 56 },
+  passRight:  { x: 330, y: 416, w: 300, h: 56 },
+  passLeft:   { x: 330, y: 484, w: 300, h: 56 }
 };
 
 const CONFIG = {
   winScore: 5,
   playerRadius: 20,
   ballRadius: 9,
-  playerSpeed: 185.1609375,
-  cpuSpeed: 112.5, // Slightly slower than player
+  playerSpeed: 112.5,
+  cpuSpeed: 112.5,
   possessionPickupLockMs: 220,
   scorePauseMs: 1400,
   stealDistanceMultiplier: 0.8,
@@ -61,9 +71,9 @@ const COLORS = {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // "menu" | "playing" | "scorePause" | "gameOver" | "paused" | "pauseMenu"
-  stateBeforePauseMenu: null, // "playing" | "paused" | "gameOver" | "scorePause" when state === "pauseMenu"
-  mode: null,   // "game" | "passing" (set when leaving menu)
+  state: "menu", // "menu" | "playing" | "scorePause" | "gameOver" | "paused" | "pauseMenu" | "playModeDowned" | "playModePlaySelect" | "touchdownPopup"
+  stateBeforePauseMenu: null,
+  mode: null,   // "game" | "passing" | "play"
   winner: null,
   scorePauseTimer: 0,
   scoredBy: null,
@@ -72,7 +82,15 @@ const game = {
   reacquireCooldownP1: 0,
   reacquireCooldownP2: 0,
   mouseX: 0,
-  mouseY: 0
+  mouseY: 0,
+  playModeDown: 1,
+  playModeMaxDowns: 4,
+  playModeLineX: 0,
+  playModePhase: null,   // null | "handoff" | "toss" | "sweep"
+  playModeCurrentPlay: null,
+  playModeSweepHandoffT: 0,
+  touchdownPopupTimer: 0,
+  afterTouchdownAction: null
 };
 
 const keys = {};
@@ -115,7 +133,7 @@ const allyHorse = {
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
-  speed: CONFIG.playerSpeed - 25,
+  speed: CONFIG.cpuSpeed,
   color: COLORS.horse
 };
 

@@ -208,13 +208,13 @@ function drawField() {
   ctx.save();
   ctx.translate(FIELD.x + FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText("BARNABY", 0, 0);
+  ctx.fillText("PIG", 0, 0);
   ctx.restore();
 
   ctx.save();
   ctx.translate(FIELD.x + FIELD.width - FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
   ctx.rotate(Math.PI / 2);
-  ctx.fillText("PIG", 0, 0);
+  ctx.fillText("BARNABY", 0, 0);
   ctx.restore();
 }
 
@@ -337,6 +337,13 @@ function drawScoreboard() {
   ctx.textAlign = "right";
   ctx.fillStyle = "#f9a8d4";
   ctx.fillText(`Professor Pig: ${player2.score}`, canvas.width - 24, 36);
+
+  if (game.mode === "play") {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = "14px Arial";
+    ctx.fillText(`Play Mode: Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, 54);
+  }
 }
 
 function drawCenterMessage(title, subtitle) {
@@ -356,6 +363,22 @@ function drawCenterMessage(title, subtitle) {
   ctx.fillText(subtitle, canvas.width / 2, 285);
 }
 
+function drawTouchdownPopup() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.white;
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 6;
+  ctx.font = "bold 96px Arial";
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.strokeText("TOUCHDOWN", cx, cy);
+  ctx.fillText("TOUCHDOWN", cx, cy);
+  ctx.textBaseline = "alphabetic";
+}
+
 function drawMenu() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -370,6 +393,7 @@ function drawMenu() {
 
   const g = MENU_BUTTONS.gameMode;
   const pm = MENU_BUTTONS.passingMode;
+  const pl = MENU_BUTTONS.playMode;
 
   ctx.fillStyle = "#374151";
   ctx.fillRect(g.x, g.y, g.w, g.h);
@@ -386,9 +410,15 @@ function drawMenu() {
   ctx.fillStyle = COLORS.white;
   ctx.fillText("Passing Mode", pm.x + pm.w / 2, pm.y + pm.h / 2 + 8);
 
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Play Mode", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
+
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("Game Mode: Run with the ball. Passing Mode: Click to throw.", canvas.width / 2, 450);
+  ctx.fillText("Game: Run with the ball. Passing: Click to throw. Play: 4 downs from the red 20-yard line.", canvas.width / 2, 470);
 }
 
 function drawPauseMenu() {
@@ -410,6 +440,7 @@ function drawPauseMenu() {
   ctx.fillText("Press ESC again to resume", canvas.width / 2, 265);
 
   const res = PAUSE_MENU_BUTTONS.resume;
+  const playBtn = PAUSE_MENU_BUTTONS.playMode;
   const home = PAUSE_MENU_BUTTONS.home;
 
   ctx.fillStyle = "#374151";
@@ -422,10 +453,57 @@ function drawPauseMenu() {
   ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
 
   ctx.fillStyle = "#374151";
+  ctx.fillRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
+  ctx.strokeRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Play Mode", playBtn.x + playBtn.w / 2, playBtn.y + playBtn.h / 2 + 8);
+
+  ctx.fillStyle = "#374151";
   ctx.fillRect(home.x, home.y, home.w, home.h);
   ctx.strokeRect(home.x, home.y, home.w, home.h);
   ctx.fillStyle = COLORS.white;
   ctx.fillText("Back to Home Menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
+}
+
+function drawPlaySelectOverlay() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fillRect(200, 160, 560, 200);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(200, 160, 560, 200);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("Select play", canvas.width / 2, 210);
+  ctx.font = "16px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Down " + game.playModeDown + " of " + game.playModeMaxDowns, canvas.width / 2, 240);
+
+  const sr = PLAY_SELECT_BUTTONS.sweepRight;
+  const sl = PLAY_SELECT_BUTTONS.sweepLeft;
+  const pr = PLAY_SELECT_BUTTONS.passRight;
+  const pl = PLAY_SELECT_BUTTONS.passLeft;
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
+  ctx.fillRect(sl.x, sl.y, sl.w, sl.h);
+  ctx.fillRect(pr.x, pr.y, pr.w, pr.h);
+  ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
+  ctx.strokeRect(sl.x, sl.y, sl.w, sl.h);
+  ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
+  ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Sweep Right (1)", sr.x + sr.w / 2, sr.y + sr.h / 2 + 8);
+  ctx.fillText("Sweep Left (2)", sl.x + sl.w / 2, sl.y + sl.h / 2 + 8);
+  ctx.fillText("Pass Right (3)", pr.x + pr.w / 2, pr.y + pr.h / 2 + 8);
+  ctx.fillText("Pass Left (4)", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
 }
 
 function render() {
@@ -449,7 +527,14 @@ function render() {
     return;
   }
 
-  if (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) {
+  if (game.state === "playModePlaySelect") {
+    drawPlaySelectOverlay();
+    return;
+  }
+
+  const showPassAim = (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
+    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft") && ball.carrier === player1 && !ball.inFlight);
+  if (showPassAim) {
     ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
@@ -464,12 +549,25 @@ function render() {
     ctx.stroke();
   }
 
-  if (game.state === "scorePause" && game.scoredBy) {
-    const scorerName = game.scoredBy === player1 ? "Barnaby scores!" : "Professor Pig scores!";
-    drawCenterMessage(scorerName, "Resetting for the next play...");
-  } else if (game.state === "gameOver" && game.winner) {
-    const winText = game.winner === player1 ? "Barnaby Wins!" : "Professor Pig Wins!";
-    drawCenterMessage(winText, "Press R to restart");
+  if (game.state === "touchdownPopup") {
+    drawTouchdownPopup();
+  } else if (game.state === "scorePause" && game.scoredBy) {
+    if (game.scoredBy === player1) {
+      drawTouchdownPopup();
+    } else {
+      const scorerName = "Professor Pig scores!";
+      drawCenterMessage(scorerName, "Resetting for the next play...");
+    }
+  } else if (game.state === "playModeDowned") {
+    const isFourthDown = game.playModeDown >= game.playModeMaxDowns;
+    drawCenterMessage("Down!", isFourthDown ? "Press Enter to continue" : "Press Enter for next play");
+  } else if (game.state === "gameOver") {
+    if (game.mode === "play" && !game.winner) {
+      drawCenterMessage("Game Over", "Press R for new drive");
+    } else if (game.winner) {
+      const winText = game.winner === player1 ? "Barnaby Wins!" : "Professor Pig Wins!";
+      drawCenterMessage(winText, "Press R to restart");
+    }
   }
 }
 
