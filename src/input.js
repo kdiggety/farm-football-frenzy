@@ -113,7 +113,7 @@ window.addEventListener("keydown", (e) => {
     } else {
       restartGame();
     }
-  } else if (key === "enter" && game.state === "playModeDowned") {
+  } else if ((key === "enter" || key === " ") && game.state === "playModeDowned") {
     if (game.playModeDown >= game.playModeMaxDowns) {
       game.state = "gameOver";
       game.winner = null;

@@ -1,6 +1,9 @@
 // =========================================================
 // Rendering
 // =========================================================
+const barnBgImage = new Image();
+barnBgImage.src = "assets/barn_retro.png";
+
 function drawRect(x, y, w, h, color) {
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, h);
@@ -379,8 +382,253 @@ function drawTouchdownPopup() {
   ctx.textBaseline = "alphabetic";
 }
 
+function drawMenuBackground() {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  if (barnBgImage.complete && barnBgImage.naturalWidth > 0) {
+    ctx.drawImage(barnBgImage, 0, 0, w, h);
+    return;
+  }
+
+  // Layout anchors (fallback if image not loaded)
+  const peakX  = w / 2;
+  const peakY  = 22;
+  const breakLX = 148, breakRX = w - 148;
+  const breakY  = 178;
+  const eaveY   = 298;
+
+  // ── SKY ──────────────────────────────────────────────────────────
+  ctx.fillStyle = "#5BB8FF";
+  ctx.fillRect(0, 0, w, eaveY);
+
+  // Cartoon sun with rays
+  const sunX = w - 82, sunY = 64;
+  ctx.strokeStyle = "#FFD700";
+  ctx.lineWidth = 7;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(sunX + Math.cos(a) * 46, sunY + Math.sin(a) * 46);
+    ctx.lineTo(sunX + Math.cos(a) * 68, sunY + Math.sin(a) * 68);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#FFE033";
+  ctx.beginPath(); ctx.arc(sunX, sunY, 40, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = "#000";
+  ctx.beginPath(); ctx.arc(sunX - 12, sunY - 9, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(sunX + 12, sunY - 9, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(sunX, sunY + 6, 14, 0, Math.PI);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.stroke();
+
+  // Fluffy cartoon clouds
+  function drawCloud(cx, cy, s) {
+    const puffs = [{x:0,y:0,r:24},{x:-22,y:8,r:18},{x:22,y:8,r:18},{x:-10,y:-9,r:19},{x:10,y:-9,r:19}];
+    ctx.fillStyle = "#FFF";
+    puffs.forEach(p => { ctx.beginPath(); ctx.arc(cx+p.x*s, cy+p.y*s, p.r*s, 0, Math.PI*2); ctx.fill(); });
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2.5;
+    puffs.forEach(p => { ctx.beginPath(); ctx.arc(cx+p.x*s, cy+p.y*s, p.r*s, 0, Math.PI*2); ctx.stroke(); });
+  }
+  drawCloud(185, 84, 1.0);
+  drawCloud(588, 56, 0.78);
+
+  // ── BACKGROUND ROLLING HILLS ─────────────────────────────────────
+  ctx.fillStyle = "#55A855";
+  ctx.beginPath();
+  ctx.moveTo(0, eaveY + 35);
+  ctx.bezierCurveTo(140, eaveY - 75, 340, eaveY + 15, 510, eaveY - 60);
+  ctx.bezierCurveTo(680, eaveY - 125, 870, eaveY - 10, w, eaveY + 28);
+  ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2E7D32"; ctx.lineWidth = 3; ctx.stroke();
+
+  // ── SILO (left side, behind barn) ────────────────────────────────
+  const slX = 22, slW = 88, slTop = breakY + 18;
+  const slGrad = ctx.createLinearGradient(slX, 0, slX + slW, 0);
+  slGrad.addColorStop(0, "#9E9E9E");
+  slGrad.addColorStop(0.42, "#E0E0E0");
+  slGrad.addColorStop(1, "#757575");
+  ctx.fillStyle = slGrad;
+  ctx.fillRect(slX, slTop, slW, h - slTop);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+  for (let ry = slTop + 28; ry < h; ry += 26) {
+    ctx.beginPath(); ctx.moveTo(slX, ry); ctx.lineTo(slX + slW, ry); ctx.stroke();
+  }
+  ctx.fillStyle = "#BDBDBD";
+  ctx.beginPath(); ctx.ellipse(slX + slW/2, slTop, slW/2 + 5, 22, 0, Math.PI, 0); ctx.fill();
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 4; ctx.stroke();
+  ctx.strokeRect(slX, slTop, slW, h - slTop);
+
+  // ── BARN GABLE FACE (red triangle) ───────────────────────────────
+  ctx.fillStyle = "#CC2200";
+  ctx.beginPath();
+  ctx.moveTo(breakLX, breakY);
+  ctx.lineTo(peakX, peakY);
+  ctx.lineTo(breakRX, breakY);
+  ctx.closePath();
+  ctx.fill();
+  // Vertical plank lines in gable (clipped)
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(breakLX, breakY); ctx.lineTo(peakX, peakY); ctx.lineTo(breakRX, breakY);
+  ctx.closePath(); ctx.clip();
+  ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 2;
+  for (let px = 0; px < w; px += 36) {
+    ctx.beginPath(); ctx.moveTo(px, peakY - 5); ctx.lineTo(px, breakY + 5); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── BARN MAIN WALLS ───────────────────────────────────────────────
+  ctx.fillStyle = "#CC2200";
+  ctx.fillRect(0, eaveY, w, h - eaveY);
+  ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 2;
+  for (let px = 36; px < w; px += 36) {
+    ctx.beginPath(); ctx.moveTo(px, eaveY); ctx.lineTo(px, h); ctx.stroke();
+  }
+
+  // ── GAMBREL ROOF (dark charcoal, scalloped shingles) ─────────────
+  ctx.fillStyle = "#2A2A2A";
+  ctx.beginPath();
+  ctx.moveTo(peakX, peakY);
+  ctx.lineTo(breakRX, breakY);
+  ctx.lineTo(w + 5, eaveY);
+  ctx.lineTo(-5, eaveY);
+  ctx.lineTo(breakLX, breakY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Scalloped shingles clipped to roof shape
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(peakX, peakY);
+  ctx.lineTo(breakRX, breakY);
+  ctx.lineTo(w + 5, eaveY);
+  ctx.lineTo(-5, eaveY);
+  ctx.lineTo(breakLX, breakY);
+  ctx.closePath();
+  ctx.clip();
+  const shW = 32, shH = 20;
+  ctx.fillStyle = "#3A3A3A";
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 1.5;
+  for (let row = 0; (eaveY - row * shH) > peakY - shH; row++) {
+    const y = eaveY - row * shH;
+    const offset = row % 2 === 0 ? 0 : shW / 2;
+    for (let xi = -shW + offset; xi < w + shW; xi += shW) {
+      ctx.beginPath();
+      ctx.arc(xi + shW / 2, y, shW / 2, Math.PI, 0);
+      ctx.lineTo(xi + shW, y); ctx.lineTo(xi, y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Roof outline
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(peakX, peakY);
+  ctx.lineTo(breakLX, breakY); ctx.lineTo(-5, eaveY);
+  ctx.moveTo(peakX, peakY);
+  ctx.lineTo(breakRX, breakY); ctx.lineTo(w + 5, eaveY);
+  ctx.stroke();
+
+  // Eave trim board (cream)
+  ctx.fillStyle = "#F5F5DC";
+  ctx.fillRect(-5, eaveY - 10, w + 10, 18);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+  ctx.strokeRect(-5, eaveY - 10, w + 10, 18);
+
+  // ── WHITE CORNER BOARDS ───────────────────────────────────────────
+  ctx.fillStyle = "#F5F5DC";
+  ctx.fillRect(0, eaveY + 8, 32, h - eaveY - 8);
+  ctx.fillRect(w - 32, eaveY + 8, 32, h - eaveY - 8);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 4;
+  ctx.strokeRect(0, eaveY + 8, 32, h - eaveY - 8);
+  ctx.strokeRect(w - 32, eaveY + 8, 32, h - eaveY - 8);
+
+  // ── YELLOW BARN STAR (gable) ──────────────────────────────────────
+  const starX = w / 2, starY = breakY - 52;
+  ctx.fillStyle = "#FFE033"; ctx.strokeStyle = "#CC8800"; ctx.lineWidth = 4;
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const r = i % 2 === 0 ? 38 : 20;
+    const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const sx = starX + r * Math.cos(a), sy = starY + r * Math.sin(a);
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // ── HAY LOFT WINDOW + PULLEY ──────────────────────────────────────
+  const loftW = 110, loftH = 62;
+  const loftX = (w - loftW) / 2, loftY = eaveY + 22;
+  ctx.fillStyle = "#1C1410"; ctx.fillRect(loftX, loftY, loftW, loftH);
+  ctx.strokeStyle = "#F5F5DC"; ctx.lineWidth = 7; ctx.strokeRect(loftX, loftY, loftW, loftH);
+  ctx.fillStyle = "#1A1208"; ctx.fillRect(loftX + 5, loftY + 5, loftW - 10, loftH - 10);
+  // Pulley
+  ctx.strokeStyle = "#888"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(loftX + loftW/2, loftY - 20); ctx.lineTo(loftX + loftW/2, loftY); ctx.stroke();
+  ctx.fillStyle = "#777";
+  ctx.beginPath(); ctx.arc(loftX + loftW/2, loftY - 22, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
+
+  // ── SIDE WINDOWS ─────────────────────────────────────────────────
+  function drawWindow(wx, wy, ww, wh) {
+    ctx.fillStyle = "#A8D8EA"; ctx.fillRect(wx, wy, ww, wh);
+    ctx.strokeStyle = "#F5F5DC"; ctx.lineWidth = 5; ctx.strokeRect(wx, wy, ww, wh);
+    ctx.strokeStyle = "#F5F5DC"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(wx + ww/2, wy); ctx.lineTo(wx + ww/2, wy + wh); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx, wy + wh/2); ctx.lineTo(wx + ww, wy + wh/2); ctx.stroke();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.strokeRect(wx, wy, ww, wh);
+  }
+  drawWindow(200, eaveY + 28, 85, 60);
+  drawWindow(w - 285, eaveY + 28, 85, 60);
+
+  // ── BIG X-BRACE DOUBLE DOORS ──────────────────────────────────────
+  const doorW = 216, doorH = 205;
+  const doorX = (w - doorW) / 2, doorY = h - doorH - 8;
+  const midD = doorX + doorW / 2;
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.fillRect(doorX + 7, doorY + 7, doorW, doorH);
+  // Left panel
+  ctx.fillStyle = "#5D4037"; ctx.fillRect(doorX, doorY, doorW/2 - 2, doorH);
+  // Right panel
+  ctx.fillStyle = "#6D4C41"; ctx.fillRect(midD + 2, doorY, doorW/2 - 2, doorH);
+  // X braces (white, bold)
+  ctx.strokeStyle = "#F5F5DC"; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(doorX + 8, doorY + 8); ctx.lineTo(midD - 6, doorY + doorH - 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(midD - 6, doorY + 8); ctx.lineTo(doorX + 8, doorY + doorH - 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(midD + 6, doorY + 8); ctx.lineTo(doorX + doorW - 8, doorY + doorH - 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(doorX + doorW - 8, doorY + 8); ctx.lineTo(midD + 6, doorY + doorH - 8); ctx.stroke();
+  // Door frames
+  ctx.strokeStyle = "#F5F5DC"; ctx.lineWidth = 8;
+  ctx.strokeRect(doorX, doorY, doorW/2 - 2, doorH);
+  ctx.strokeRect(midD + 2, doorY, doorW/2 - 2, doorH);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 4;
+  ctx.strokeRect(doorX, doorY, doorW, doorH);
+  // Center seam
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(midD, doorY); ctx.lineTo(midD, doorY + doorH); ctx.stroke();
+  // Gold handles
+  ctx.fillStyle = "#FFD700";
+  ctx.beginPath(); ctx.arc(midD - 22, doorY + doorH * 0.52, 7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(midD + 22, doorY + doorH * 0.52, 7, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(midD - 22, doorY + doorH * 0.52, 7, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(midD + 22, doorY + doorH * 0.52, 7, 0, Math.PI*2); ctx.stroke();
+
+  // ── GROUND STRIP ─────────────────────────────────────────────────
+  ctx.fillStyle = "#4CAF50"; ctx.fillRect(0, h - 16, w, 16);
+  ctx.fillStyle = "#388E3C"; ctx.fillRect(0, h - 16, w, 7);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, h - 16); ctx.lineTo(w, h - 16); ctx.stroke();
+}
+
 function drawMenu() {
-  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  drawMenuBackground();
+
+  // Semi-transparent overlay so menu text and buttons stand out
+  ctx.fillStyle = "rgba(17, 24, 39, 0.72)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.textAlign = "center";
@@ -401,20 +649,20 @@ function drawMenu() {
   ctx.lineWidth = 3;
   ctx.strokeRect(g.x, g.y, g.w, g.h);
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 22px Arial";
-  ctx.fillText("Game Mode", g.x + g.w / 2, g.y + g.h / 2 + 8);
+  ctx.font = "bold 16px Arial";
+  ctx.fillText("Game Mode", g.x + g.w / 2, g.y + g.h / 2 + 6);
 
   ctx.fillStyle = "#374151";
   ctx.fillRect(pm.x, pm.y, pm.w, pm.h);
   ctx.strokeRect(pm.x, pm.y, pm.w, pm.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Passing Mode", pm.x + pm.w / 2, pm.y + pm.h / 2 + 8);
+  ctx.fillText("Passing Mode", pm.x + pm.w / 2, pm.y + pm.h / 2 + 6);
 
   ctx.fillStyle = "#374151";
   ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
   ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Play Mode", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
+  ctx.fillText("Play Mode", pl.x + pl.w / 2, pl.y + pl.h / 2 + 6);
 
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
@@ -470,10 +718,10 @@ function drawPlaySelectOverlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
-  ctx.fillRect(200, 160, 560, 200);
+  ctx.fillRect(230, 155, 500, 245);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(200, 160, 560, 200);
+  ctx.strokeRect(230, 155, 500, 245);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
@@ -499,11 +747,11 @@ function drawPlaySelectOverlay() {
   ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
   ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 22px Arial";
-  ctx.fillText("Sweep Right (1)", sr.x + sr.w / 2, sr.y + sr.h / 2 + 8);
-  ctx.fillText("Sweep Left (2)", sl.x + sl.w / 2, sl.y + sl.h / 2 + 8);
-  ctx.fillText("Pass Right (3)", pr.x + pr.w / 2, pr.y + pr.h / 2 + 8);
-  ctx.fillText("Pass Left (4)", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
+  ctx.font = "bold 16px Arial";
+  ctx.fillText("Sweep Right", sr.x + sr.w / 2, sr.y + sr.h / 2 + 6);
+  ctx.fillText("Sweep Left", sl.x + sl.w / 2, sl.y + sl.h / 2 + 6);
+  ctx.fillText("Pass Right", pr.x + pr.w / 2, pr.y + pr.h / 2 + 6);
+  ctx.fillText("Pass Left", pl.x + pl.w / 2, pl.y + pl.h / 2 + 6);
 }
 
 function render() {
@@ -515,6 +763,21 @@ function render() {
   }
 
   drawField();
+
+  // Line of scrimmage indicator for play mode
+  if (game.mode === "play" && game.playModeLineX) {
+    ctx.save();
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.moveTo(game.playModeLineX, FIELD.y);
+    ctx.lineTo(game.playModeLineX, FIELD.y + FIELD.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   drawScoreboard();
   drawPlayer(player1, "Barnaby", "#bfdbfe");
   drawPlayer(player2, "Professor Pig", "#fbcfe8");

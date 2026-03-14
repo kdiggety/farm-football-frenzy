@@ -14,9 +14,9 @@ const FIELD = {
 
 // Menu button layout (canvas coordinates) for hit testing
 const MENU_BUTTONS = {
-  gameMode:  { x: 330, y: 240, w: 300, h: 56 },
-  passingMode: { x: 330, y: 320, w: 300, h: 56 },
-  playMode: { x: 330, y: 400, w: 300, h: 56 }
+  gameMode:    { x: 390, y: 279, w: 180, h: 34 },
+  passingMode: { x: 390, y: 331, w: 180, h: 34 },
+  playMode:    { x: 390, y: 383, w: 180, h: 34 }
 };
 
 // Pause overlay menu (shown when Escape is pressed during a game)
@@ -26,12 +26,12 @@ const PAUSE_MENU_BUTTONS = {
   home:     { x: 330, y: 400, w: 300, h: 56 }
 };
 
-// Play Mode — play selection (before each down)
+// Play Mode — play selection (2x2 grid: top-left Sweep Left, top-right Sweep Right, bottom-left Pass Left, bottom-right Pass Right)
 const PLAY_SELECT_BUTTONS = {
-  sweepRight: { x: 330, y: 280, w: 300, h: 56 },
-  sweepLeft:  { x: 330, y: 348, w: 300, h: 56 },
-  passRight:  { x: 330, y: 416, w: 300, h: 56 },
-  passLeft:   { x: 330, y: 484, w: 300, h: 56 }
+  sweepLeft:  { x: 260, y: 285, w: 210, h: 39 },
+  sweepRight: { x: 490, y: 285, w: 210, h: 39 },
+  passLeft:   { x: 260, y: 340, w: 210, h: 39 },
+  passRight:  { x: 490, y: 340, w: 210, h: 39 }
 };
 
 const CONFIG = {
@@ -124,7 +124,8 @@ const ball = {
   carrier: null, // null | player1 | player2
   inFlight: false,
   targetX: 0,
-  targetY: 0
+  targetY: 0,
+  settleTimer: 0
 };
 
 const allyHorse = {

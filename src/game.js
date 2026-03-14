@@ -156,6 +156,14 @@ function startPlayModeDrive(fromX) {
 }
 
 function advancePlayModeDown(newLineX) {
+  // Tackled by the CPU inside the pig's end zone = immediate game over
+  if (game.playModeTackle && newLineX <= FIELD.x + FIELD.endZoneWidth) {
+    game.state = "gameOver";
+    game.winner = null;
+    game.playModeTackle = false;
+    return;
+  }
+  game.playModeTackle = false;
   if (game.playModeDown >= game.playModeMaxDowns) {
     game.state = "gameOver";
     game.winner = null;
@@ -499,9 +507,10 @@ function updatePlayMode(dt) {
   updateCPU(dt);
   updateAllies(dt);
   updateBallPosition();
-  if (ball.carrier === player1 && circleTouch(player1, player2)) {
+  if (ball.carrier === player1 && (circleTouch(player1, player2) || circleTouch(player1, allyDonkey))) {
     game.state = "playModeDowned";
     game.playModeDownedSpot = player1.x;
+    game.playModeTackle = true;
     return;
   }
   const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
@@ -586,6 +595,7 @@ function updatePlayModeSweepRight(dt) {
     if (carrier && (circleTouch(carrier, player2) || circleTouch(carrier, allyDonkey))) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = carrier.x;
+      game.playModeTackle = true;
       game.playModePhase = null;
       game.playModeCurrentPlay = null;
       return;
@@ -669,12 +679,13 @@ function updatePlayModeSweepLeft(dt) {
     if (carrier && (circleTouch(carrier, player2) || circleTouch(carrier, allyDonkey))) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = carrier.x;
+      game.playModeTackle = true;
       game.playModePhase = null;
       game.playModeCurrentPlay = null;
       return;
     }
-    const topBoundary = FIELD.y + 40;
-    if (carrier === allyHorse && allyHorse.y <= topBoundary) {
+    const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
+    if (carrier === allyHorse && allyHorse.x >= rightEndZoneLeft) {
       player1.score += 1;
       game.state = "touchdownPopup";
       game.touchdownPopupTimer = 4000;
@@ -693,6 +704,7 @@ function updatePlayModePassRight(dt) {
     if (circleTouch(player1, player2) || circleTouch(player1, allyDonkey)) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = player1.x;
+      game.playModeTackle = true;
       game.playModeCurrentPlay = null;
       updateBallPosition();
       return;
@@ -714,21 +726,21 @@ function updatePlayModePassRight(dt) {
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
     const move = CONFIG.passSpeed * dt;
-    if (dist <= move || dist < 8) {
+    if (circleTouch(allyHorse, ball)) {
+      // WR intersects ball mid-flight — catch
+      ball.inFlight = false;
+      ball.carrier = allyHorse;
+      updateBallPosition();
+    } else if (dist <= move || dist < 8) {
+      // Ball reached target without touching WR — incomplete
       ball.x = ball.targetX;
       ball.y = ball.targetY;
       ball.inFlight = false;
-      if (circleTouch(allyHorse, ball)) {
-        ball.carrier = allyHorse;
-        updateBallPosition();
-      } else {
-        ball.x = player1.x;
-        ball.y = player1.y - player1.radius - 8;
-        ball.carrier = null;
-        game.state = "playModeDowned";
-        game.playModeDownedSpot = player1.x;
-        game.playModeCurrentPlay = null;
-      }
+      ball.carrier = null;
+      game.state = "playModeDowned";
+      game.playModeDownedSpot = game.playModeLineX;
+      game.playModeTackle = false;
+      game.playModeCurrentPlay = null;
     } else {
       ball.x += (dx / dist) * move;
       ball.y += (dy / dist) * move;
@@ -750,6 +762,7 @@ function updatePlayModePassRight(dt) {
     if (circleTouch(allyHorse, player2) || circleTouch(allyHorse, allyDonkey)) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = allyHorse.x;
+      game.playModeTackle = true;
       game.playModeCurrentPlay = null;
       return;
     }
@@ -774,6 +787,7 @@ function updatePlayModePassLeft(dt) {
     if (circleTouch(player1, player2) || circleTouch(player1, allyDonkey)) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = player1.x;
+      game.playModeTackle = true;
       game.playModeCurrentPlay = null;
       updateBallPosition();
       return;
@@ -795,21 +809,21 @@ function updatePlayModePassLeft(dt) {
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
     const move = CONFIG.passSpeed * dt;
-    if (dist <= move || dist < 8) {
+    if (circleTouch(allyHorse, ball)) {
+      // WR intersects ball mid-flight — catch
+      ball.inFlight = false;
+      ball.carrier = allyHorse;
+      updateBallPosition();
+    } else if (dist <= move || dist < 8) {
+      // Ball reached target without touching WR — incomplete
       ball.x = ball.targetX;
       ball.y = ball.targetY;
       ball.inFlight = false;
-      if (circleTouch(allyHorse, ball)) {
-        ball.carrier = allyHorse;
-        updateBallPosition();
-      } else {
-        ball.x = player1.x;
-        ball.y = player1.y - player1.radius - 8;
-        ball.carrier = null;
-        game.state = "playModeDowned";
-        game.playModeDownedSpot = player1.x;
-        game.playModeCurrentPlay = null;
-      }
+      ball.carrier = null;
+      game.state = "playModeDowned";
+      game.playModeDownedSpot = game.playModeLineX;
+      game.playModeTackle = false;
+      game.playModeCurrentPlay = null;
     } else {
       ball.x += (dx / dist) * move;
       ball.y += (dy / dist) * move;
@@ -831,6 +845,7 @@ function updatePlayModePassLeft(dt) {
     if (circleTouch(allyHorse, player2) || circleTouch(allyHorse, allyDonkey)) {
       game.state = "playModeDowned";
       game.playModeDownedSpot = allyHorse.x;
+      game.playModeTackle = true;
       game.playModeCurrentPlay = null;
       return;
     }
