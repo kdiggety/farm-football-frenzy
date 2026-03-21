@@ -67,12 +67,30 @@ window.addEventListener("click", (e) => {
     }
     return;
   }
+  if (game.state === "playModeDowned") {
+    if (game.playModeDown >= game.playModeMaxDowns) {
+      game.state = "gameOver";
+      game.winner = null;
+    } else {
+      advancePlayModeDown(game.playModeDownedSpot);
+    }
+    return;
+  }
+  if (game.state === "touchdownPopup") {
+    return;
+  }
   if (game.state === "playModePlaySelect") {
     const sr = PLAY_SELECT_BUTTONS.sweepRight;
     const sl = PLAY_SELECT_BUTTONS.sweepLeft;
     const pr = PLAY_SELECT_BUTTONS.passRight;
     const pl = PLAY_SELECT_BUTTONS.passLeft;
-    if (p.x >= sr.x && p.x <= sr.x + sr.w && p.y >= sr.y && p.y <= sr.y + sr.h) {
+    const dt = DEFENSE_TOGGLE_BUTTON;
+    if (p.x >= dt.x && p.x <= dt.x + dt.w && p.y >= dt.y && p.y <= dt.y + dt.h) {
+      game.selectedDefense = game.selectedDefense === "random" ? "A"
+        : game.selectedDefense === "A" ? "B"
+        : "random";
+      previewDefensePositions();
+    } else if (p.x >= sr.x && p.x <= sr.x + sr.w && p.y >= sr.y && p.y <= sr.y + sr.h) {
       startSweepRightPlay();
     } else if (p.x >= sl.x && p.x <= sl.x + sl.w && p.y >= sl.y && p.y <= sl.y + sl.h) {
       startSweepLeftPlay();
@@ -92,7 +110,10 @@ window.addEventListener("click", (e) => {
     ball.carrier = null;
     game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
   }
-  if (game.state === "playing" && game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft") && ball.carrier === player1 && !ball.inFlight) {
+  if (game.state === "playing" && game.mode === "play"
+      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft")
+      && ball.carrier === player1 && !ball.inFlight
+      && game.passPlayDropbackDone && game.passPlayCanThrow) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
     ball.targetX = tx;
@@ -165,10 +186,15 @@ function updatePlayerInput(dt) {
   dx /= len;
   dy /= len;
 
-  if (game.mode === "play" && (game.playModePhase === "sweep" || game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft") && ball.carrier === allyHorse) {
+  const isPlayMode = game.mode === "play" && (game.playModePhase === "sweep" || game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft");
+  if (isPlayMode && ball.carrier === allyHorse) {
     allyHorse.x += dx * allyHorse.speed * dt;
     allyHorse.y += dy * allyHorse.speed * dt;
     clampPlayerToField(allyHorse);
+  } else if (isPlayMode && ball.carrier === lilTunnelPete) {
+    lilTunnelPete.x += dx * lilTunnelPete.speed * dt;
+    lilTunnelPete.y += dy * lilTunnelPete.speed * dt;
+    clampPlayerToField(lilTunnelPete);
   } else {
     player1.x += dx * player1.speed * dt;
     player1.y += dy * player1.speed * dt;

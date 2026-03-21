@@ -34,6 +34,9 @@ const PLAY_SELECT_BUTTONS = {
   passRight:  { x: 490, y: 340, w: 210, h: 39 }
 };
 
+// Defense toggle button (below the 2x2 play grid)
+const DEFENSE_TOGGLE_BUTTON = { x: 370, y: 403, w: 220, h: 36 };
+
 const CONFIG = {
   winScore: 5,
   playerRadius: 20,
@@ -90,7 +93,22 @@ const game = {
   playModeCurrentPlay: null,
   playModeSweepHandoffT: 0,
   touchdownPopupTimer: 0,
-  afterTouchdownAction: null
+  afterTouchdownAction: null,
+  playModeDefense: null,       // "A" | "B"
+  defenseReactionTimer: 0,     // ms remaining before Defense A's Hee Haw reacts to the WR
+  passDefCovering: null,       // which defender covers WR on Defense B
+  passDefRushing: null,        // which defender rushes QB on Defense B
+  playModeIncomplete: false,   // true when last play ended as an incomplete pass
+  playModeLastYards: 0,        // yards gained/lost on the last play
+  playModeLastPlayType: null,  // "sweepRight" | "sweepLeft" | "passRight" | "passLeft" | null
+  playModeLastResultType: "noGain", // "gain" | "loss" | "noGain" | "incomplete" | "sack"
+  passPlayDropbackDone: false,   // true once QB has finished auto-dropping back
+  passPlayCanThrow: true,        // false once QB has crossed the line of scrimmage
+  passPlayDropbackTarget: 0,     // x coordinate of the 10-yard dropback spot
+  rushReactionTimer: 0,          // ms remaining before the rushing defender starts rushing
+  cluckNorrisTimer: 0,           // ms remaining before Cluck Norris starts pursuing
+  selectedDefense: "random",     // "A" | "B" | "random" — player's chosen defensive scheme
+  passDefDeepTarget: null        // "horse" | "pete" — which receiver Cluck Norris is assigned (Defense B)
 };
 
 const keys = {};
@@ -146,5 +164,27 @@ const allyDonkey = {
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
   color: COLORS.sidekickDonkey
+};
+
+// Professor Pig's team — new defender
+const cluckNorris = {
+  id: "cluckNorris",
+  name: "Big Coop",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.cpuSpeed,
+  color: "#ffffff"  // white feathers
+};
+
+// Barnaby's team — new blocker/receiver
+const lilTunnelPete = {
+  id: "lilTunnelPete",
+  name: "Lil' Tunnel Pete",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.playerSpeed,
+  color: "#c8a97e"  // tan
 };
 

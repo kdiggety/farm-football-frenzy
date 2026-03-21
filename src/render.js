@@ -252,14 +252,59 @@ function drawPlayer(player, label, accentText) {
   ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
   ctx.fill();
 
-  // Ears / snout details
+  // Ears / snout / unique feature details
   if (player.id === "player1") {
+    // Barnaby — bunny ears
     ctx.fillStyle = "#93c5fd";
     ctx.beginPath();
     ctx.ellipse(player.x - 8, player.y - 20, 5, 10, -0.3, 0, Math.PI * 2);
     ctx.ellipse(player.x + 8, player.y - 20, 5, 10, 0.3, 0, Math.PI * 2);
     ctx.fill();
+  } else if (player.id === "cluckNorris") {
+    // Cluck Norris — red comb (3 bumps on top)
+    ctx.fillStyle = "#dc2626";
+    for (let i = -1; i <= 1; i++) {
+      const cx = player.x + i * 10;
+      const cy = player.y - player.radius;
+      const r  = i === 0 ? 10 : 7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Red beak
+    ctx.beginPath();
+    ctx.moveTo(player.x - 5, player.y + 2);
+    ctx.lineTo(player.x + 5, player.y + 2);
+    ctx.lineTo(player.x,     player.y + 10);
+    ctx.closePath();
+    ctx.fill();
+  } else if (player.id === "lilTunnelPete") {
+    // Lil' Tunnel Pete — floppy dog ears drooping down the sides
+    ctx.fillStyle = "#92400e";
+    ctx.beginPath();
+    ctx.ellipse(player.x - player.radius + 3, player.y - 7, 5, 10, -0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(player.x + player.radius - 3, player.y - 7, 5, 10, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    // Light brown inner circle
+    ctx.fillStyle = "#c8935a";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    // Snout
+    ctx.fillStyle = "#d97706";
+    ctx.beginPath();
+    ctx.ellipse(player.x, player.y + 6, 8, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Nose
+    ctx.fillStyle = "#7c2d12";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y + 4, 2, 0, Math.PI * 2);
+    ctx.fill();
   } else {
+    // Default pig snout
     ctx.fillStyle = "#f9a8d4";
     ctx.beginPath();
     ctx.ellipse(player.x, player.y + 4, 12, 8, 0, 0, Math.PI * 2);
@@ -349,21 +394,50 @@ function drawScoreboard() {
   }
 }
 
-function drawCenterMessage(title, subtitle) {
-  ctx.fillStyle = "rgba(17, 24, 39, 0.78)";
-  ctx.fillRect(180, 190, 600, 150);
+function buildPlayResultText() {
+  const labels = {
+    sweepRight: "Sweep Right",
+    sweepLeft:  "Sweep Left",
+    passRight:  "Pass Right",
+    passLeft:   "Pass Left"
+  };
+  const label = labels[game.playModeLastPlayType] || "Run";
+  const rt    = game.playModeLastResultType;
+  const yds   = game.playModeLastYards;
+
+  if (rt === "incomplete") return { text: `${label} — Incomplete Pass`, color: "#94a3b8" };
+  if (rt === "sack")       return { text: `${label} — Sack, ${yds} yds`, color: "#f87171" };
+  if (rt === "gain")       return { text: `${label} — +${yds} yard${yds !== 1 ? "s" : ""}`, color: "#4ade80" };
+  if (rt === "loss")       return { text: `${label} — ${yds} yard${yds !== -1 ? "s" : ""}`, color: "#f87171" };
+  return { text: `${label} — No gain`, color: "#fbbf24" };
+}
+
+function drawCenterMessage(title, subtitle, detail) {
+  const hasDetail = !!detail;
+  const boxH = hasDetail ? 185 : 150;
+  const boxY = Math.round((canvas.height - boxH) / 2) - 10;
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.88)";
+  ctx.fillRect(180, boxY, 600, boxH);
 
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(180, 190, 600, 150);
+  ctx.strokeRect(180, boxY, 600, boxH);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 34px Arial";
-  ctx.fillText(title, canvas.width / 2, 245);
+  ctx.fillText(title, canvas.width / 2, boxY + 52);
 
   ctx.font = "18px Arial";
-  ctx.fillText(subtitle, canvas.width / 2, 285);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText(subtitle, canvas.width / 2, boxY + 90);
+
+  if (hasDetail) {
+    ctx.font = "bold 22px Arial";
+    ctx.fillStyle = detail.color;
+    ctx.fillText(detail.text, canvas.width / 2, boxY + 138);
+  }
 }
 
 function drawTouchdownPopup() {
@@ -670,10 +744,7 @@ function drawMenu() {
 }
 
 function drawPauseMenu() {
-  ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fillStyle = "rgba(17, 24, 39, 0.35)";
   ctx.fillRect(200, 180, 560, 240);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
@@ -691,7 +762,7 @@ function drawPauseMenu() {
   const playBtn = PAUSE_MENU_BUTTONS.playMode;
   const home = PAUSE_MENU_BUTTONS.home;
 
-  ctx.fillStyle = "#374151";
+  ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(res.x, res.y, res.w, res.h);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
@@ -700,13 +771,13 @@ function drawPauseMenu() {
   ctx.font = "bold 22px Arial";
   ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
 
-  ctx.fillStyle = "#374151";
+  ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
   ctx.strokeRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
   ctx.fillStyle = COLORS.white;
   ctx.fillText("Play Mode", playBtn.x + playBtn.w / 2, playBtn.y + playBtn.h / 2 + 8);
 
-  ctx.fillStyle = "#374151";
+  ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(home.x, home.y, home.w, home.h);
   ctx.strokeRect(home.x, home.y, home.w, home.h);
   ctx.fillStyle = COLORS.white;
@@ -718,10 +789,10 @@ function drawPlaySelectOverlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
-  ctx.fillRect(230, 155, 500, 245);
+  ctx.fillRect(230, 155, 500, 300);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(230, 155, 500, 245);
+  ctx.strokeRect(230, 155, 500, 300);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
@@ -752,6 +823,47 @@ function drawPlaySelectOverlay() {
   ctx.fillText("Sweep Left", sl.x + sl.w / 2, sl.y + sl.h / 2 + 6);
   ctx.fillText("Pass Right", pr.x + pr.w / 2, pr.y + pr.h / 2 + 6);
   ctx.fillText("Pass Left", pl.x + pl.w / 2, pl.y + pl.h / 2 + 6);
+
+  // Divider
+  ctx.strokeStyle = "#4b5563";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(260, 393);
+  ctx.lineTo(700, 393);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Defense label
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillText("Defense", canvas.width / 2, 400);
+
+  // Defense toggle button
+  const dt = DEFENSE_TOGGLE_BUTTON;
+  const defColor = game.selectedDefense === "A"
+    ? "#1d4ed8"
+    : game.selectedDefense === "B"
+    ? "#b45309"
+    : "#374151";
+  ctx.fillStyle = defColor;
+  ctx.fillRect(dt.x, dt.y, dt.w, dt.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(dt.x, dt.y, dt.w, dt.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 15px Arial";
+  const defLabel = game.selectedDefense === "A"
+    ? "Run Defense"
+    : game.selectedDefense === "B"
+    ? "Pass Defense"
+    : "Defense: Random";
+  ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
+
+  // Small arrows hint
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillText("click to cycle", canvas.width / 2, dt.y + dt.h + 17);
 }
 
 function render() {
@@ -779,10 +891,12 @@ function render() {
   }
 
   drawScoreboard();
-  drawPlayer(player1, "Barnaby", "#bfdbfe");
-  drawPlayer(player2, "Professor Pig", "#fbcfe8");
-  drawPlayer(allyHorse, "Sir Neigh-a-Lot", "#fed7aa");
-  drawPlayer(allyDonkey, "Deputy Hee-Haw", "#bbf7d0");
+  drawPlayer(player1,      "Barnaby",         "#bfdbfe");
+  drawPlayer(player2,      "Professor Pig",   "#fbcfe8");
+  drawPlayer(allyHorse,    "Sir Neigh-a-Lot", "#fed7aa");
+  drawPlayer(allyDonkey,   "Deputy Hee-Haw",  "#bbf7d0");
+  drawPlayer(cluckNorris,  "Big Coop",        "#fca5a5");
+  drawPlayer(lilTunnelPete,"Lil' Tunnel Pete","#fef08a");
   drawBall();
 
   if (game.state === "pauseMenu") {
@@ -796,7 +910,9 @@ function render() {
   }
 
   const showPassAim = (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
-    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft") && ball.carrier === player1 && !ball.inFlight);
+    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft")
+      && ball.carrier === player1 && !ball.inFlight
+      && game.passPlayDropbackDone && game.passPlayCanThrow);
   if (showPassAim) {
     ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
     ctx.lineWidth = 2;
@@ -823,7 +939,9 @@ function render() {
     }
   } else if (game.state === "playModeDowned") {
     const isFourthDown = game.playModeDown >= game.playModeMaxDowns;
-    drawCenterMessage("Down!", isFourthDown ? "Press Enter to continue" : "Press Enter for next play");
+    const downedTitle  = game.playModeIncomplete ? "Incomplete!" : "Down!";
+    const detail       = game.mode === "play" ? buildPlayResultText() : null;
+    drawCenterMessage(downedTitle, isFourthDown ? "Press Enter to continue" : "Press Enter for next play", detail);
   } else if (game.state === "gameOver") {
     if (game.mode === "play" && !game.winner) {
       drawCenterMessage("Game Over", "Press R for new drive");

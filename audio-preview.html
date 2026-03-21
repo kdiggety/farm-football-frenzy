@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Touchdown Audio Preview</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: #1a1a2e;
+      font-family: Arial, sans-serif;
+      color: #fff;
+    }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    p  { color: #aaa; margin: 0 0 16px; font-size: 14px; }
+    button {
+      padding: 14px 32px;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    button:active { transform: scale(0.96); }
+    #btn-horse  { background: #2563eb; color: #fff; }
+    #btn-bunny  { background: #16a34a; color: #fff; }
+    #btn-both   { background: #d97706; color: #fff; }
+  </style>
+</head>
+<body>
+  <h1>🏈 Touchdown Audio Preview</h1>
+  <p>Click a button to hear the sound. Your browser may ask for audio permission on first click.</p>
+  <button id="btn-horse"  onclick="previewHorse()">🐴 Sir Neigh-a-Lot scores</button>
+  <button id="btn-bunny"  onclick="previewBunny()">🐰 Barnaby scores</button>
+  <button id="btn-both"   onclick="previewBoth()">🎙️ Voice + Animal (full TD)</button>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function resumeAudio() {
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function playHorseNeigh() {
+  resumeAudio();
+  const now = audioCtx.currentTime;
+  const duration = 0.9;
+
+  const lfo     = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.value  = 7;
+  lfoGain.gain.value   = 60;
+  lfo.connect(lfoGain);
+
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(900, now);
+  osc.frequency.exponentialRampToValueAtTime(280, now + duration * 0.6);
+  osc.frequency.exponentialRampToValueAtTime(420, now + duration * 0.75);
+  osc.frequency.exponentialRampToValueAtTime(200, now + duration);
+  lfoGain.connect(osc.frequency);
+
+  const filter    = audioCtx.createBiquadFilter();
+  filter.type     = "bandpass";
+  filter.frequency.value = 600;
+  filter.Q.value  = 1.5;
+
+  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  lfo.start(now); osc.start(now);
+  osc.stop(now + duration); lfo.stop(now + duration);
+}
+
+function playBunnySqueak() {
+  resumeAudio();
+  const now = audioCtx.currentTime;
+  [0, 0.18].forEach(offset => {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1600, now + offset);
+    osc.frequency.exponentialRampToValueAtTime(900, now + offset + 0.13);
+    gain.gain.setValueAtTime(0.3, now + offset);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.13);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + offset);
+    osc.stop(now + offset + 0.14);
+  });
+}
+
+let _voices = [];
+function loadVoices() { _voices = speechSynthesis.getVoices(); }
+if (window.speechSynthesis) {
+  speechSynthesis.addEventListener("voiceschanged", loadVoices);
+  loadVoices();
+}
+
+function pickBestVoice(voices) {
+  return (
+    voices.find(v => /en[-_]US/i.test(v.lang) && /enhanced|premium|neural/i.test(v.name)) ||
+    voices.find(v => /en[-_]US/i.test(v.lang) && /google/i.test(v.name)) ||
+    voices.find(v => /en[-_]US/i.test(v.lang) && /samantha|alex|tom|nicky|monica/i.test(v.name)) ||
+    voices.find(v => /en[-_]US/i.test(v.lang)) ||
+    voices.find(v => /en/i.test(v.lang))
+  );
+}
+
+function sayTouchdown() {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const phrases = [
+    "Well... hot dog. TOUCHDOWN, y'all!",
+    "Yeeee-haw! That's a TOUCHDOWN, baby!",
+    "Oh my goodness... he's in! TOUCHDOWN!",
+    "And... he did it! TOUCHDOWN, partner!",
+    "Hoo-wee... that right there... is a TOUCHDOWN!"
+  ];
+  const text  = phrases[Math.floor(Math.random() * phrases.length)];
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate   = 0.80 + Math.random() * 0.12;
+  utter.pitch  = 0.88 + Math.random() * 0.18;
+  utter.volume = 1;
+  const voices = _voices.length ? _voices : speechSynthesis.getVoices();
+  const best   = pickBestVoice(voices);
+  if (best) utter.voice = best;
+  speechSynthesis.speak(utter);
+}
+
+function previewHorse() { playHorseNeigh(); }
+function previewBunny() { playBunnySqueak(); }
+function previewBoth(isHorse = true) {
+  sayTouchdown();
+  setTimeout(() => {
+    if (isHorse) playHorseNeigh(); else playBunnySqueak();
+  }, 600);
+}
+</script>
+</body>
+</html>
