@@ -440,6 +440,22 @@ function drawCenterMessage(title, subtitle, detail) {
   }
 }
 
+function drawSafetyPopup() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.font = "bold 80px Arial";
+  ctx.strokeStyle = "#ef4444";
+  ctx.lineWidth = 6;
+  ctx.strokeText("🙆🏿‍♂️ SAFETY 🙆🏿‍♂️", cx, cy);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("🙆🏿‍♂️ SAFETY 🙆🏿‍♂️", cx, cy);
+  ctx.textBaseline = "alphabetic";
+}
+
 function drawTouchdownPopup() {
   ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -842,9 +858,9 @@ function drawPlaySelectOverlay() {
   // Defense toggle button
   const dt = DEFENSE_TOGGLE_BUTTON;
   const defColor = game.selectedDefense === "A"
-    ? "#1d4ed8"
+    ? "#dc2626"
     : game.selectedDefense === "B"
-    ? "#b45309"
+    ? "#1d4ed8"
     : "#374151";
   ctx.fillStyle = defColor;
   ctx.fillRect(dt.x, dt.y, dt.w, dt.h);
@@ -928,7 +944,9 @@ function render() {
     ctx.stroke();
   }
 
-  if (game.state === "touchdownPopup") {
+  if (game.state === "safetyPopup") {
+    drawSafetyPopup();
+  } else if (game.state === "touchdownPopup") {
     drawTouchdownPopup();
   } else if (game.state === "scorePause" && game.scoredBy) {
     if (game.scoredBy === player1) {

@@ -228,10 +228,10 @@ function startPlayModeDrive(fromX) {
 }
 
 function advancePlayModeDown(newLineX) {
-  // Tackled by the CPU inside the pig's end zone = immediate game over
+  // Tackled by the CPU inside the pig's end zone = Safety
   if (game.playModeTackle && newLineX <= FIELD.x + FIELD.endZoneWidth) {
-    game.state = "gameOver";
-    game.winner = null;
+    game.state = "safetyPopup";
+    game.safetyPopupTimer = 3500;
     game.playModeTackle = false;
     return;
   }
@@ -1214,8 +1214,21 @@ function updateTouchdownPopup(dt) {
   }
 }
 
+function updateSafetyPopup(dt) {
+  game.safetyPopupTimer -= dt * 1000;
+  if (game.safetyPopupTimer <= 0) {
+    game.safetyPopupTimer = 0;
+    game.state = "gameOver";
+    game.winner = null;
+  }
+}
+
 function update(dt) {
   if (game.state === "menu" || game.state === "pauseMenu" || game.state === "playModeDowned" || game.state === "playModePlaySelect") {
+    return;
+  }
+  if (game.state === "safetyPopup") {
+    updateSafetyPopup(dt);
     return;
   }
   if (game.state === "touchdownPopup") {

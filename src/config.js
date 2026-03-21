@@ -93,6 +93,7 @@ const game = {
   playModeCurrentPlay: null,
   playModeSweepHandoffT: 0,
   touchdownPopupTimer: 0,
+  safetyPopupTimer: 0,
   afterTouchdownAction: null,
   playModeDefense: null,       // "A" | "B"
   defenseReactionTimer: 0,     // ms remaining before Defense A's Hee Haw reacts to the WR

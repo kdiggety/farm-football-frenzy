@@ -76,7 +76,7 @@ window.addEventListener("click", (e) => {
     }
     return;
   }
-  if (game.state === "touchdownPopup") {
+  if (game.state === "touchdownPopup" || game.state === "safetyPopup") {
     return;
   }
   if (game.state === "playModePlaySelect") {
