@@ -1,6 +1,30 @@
 // =========================================================
-// Audio — touchdown announcement + animal sounds
+// Audio — touchdown announcement + animal sounds + menu music
 // =========================================================
+
+// ── Menu music ────────────────────────────────────────────
+const menuMusic = document.getElementById("menuMusic");
+menuMusic.volume = 0.5;
+
+let _menuMusicState = null; // "playing" | "stopped"
+
+function startMenuMusic() {
+  if (_menuMusicState === "playing") return;
+  _menuMusicState = "playing";
+  menuMusic.currentTime = 0;
+  menuMusic.play().catch(() => {});
+}
+
+function stopMenuMusic() {
+  if (_menuMusicState === "stopped") return;
+  _menuMusicState = "stopped";
+  menuMusic.pause();
+  menuMusic.currentTime = 0;
+}
+
+// Start music on first user interaction (browser autoplay policy)
+window.addEventListener("click",    () => { if (typeof game !== "undefined" && game.state === "menu") startMenuMusic(); }, { once: false });
+window.addEventListener("keydown",  () => { if (typeof game !== "undefined" && game.state === "menu") startMenuMusic(); }, { once: false });
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function resumeAudio() {

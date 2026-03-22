@@ -26,16 +26,18 @@ const PAUSE_MENU_BUTTONS = {
   home:     { x: 330, y: 400, w: 300, h: 56 }
 };
 
-// Play Mode — play selection (2x2 grid: top-left Sweep Left, top-right Sweep Right, bottom-left Pass Left, bottom-right Pass Right)
+// Play Mode — play selection (3 rows × 2 columns, tall buttons for bigger square diagrams)
 const PLAY_SELECT_BUTTONS = {
-  sweepLeft:  { x: 260, y: 285, w: 210, h: 39 },
-  sweepRight: { x: 490, y: 285, w: 210, h: 39 },
-  passLeft:   { x: 260, y: 340, w: 210, h: 39 },
-  passRight:  { x: 490, y: 340, w: 210, h: 39 }
+  sweepLeft:  { x: 260, y: 208, w: 210, h: 84 },
+  sweepRight: { x: 490, y: 208, w: 210, h: 84 },
+  passLeft:   { x: 260, y: 298, w: 210, h: 84 },
+  passRight:  { x: 490, y: 298, w: 210, h: 84 },
+  diveRight:  { x: 260, y: 388, w: 210, h: 84 },
+  diveLeft:   { x: 490, y: 388, w: 210, h: 84 }
 };
 
-// Defense toggle button (below the 2x2 play grid)
-const DEFENSE_TOGGLE_BUTTON = { x: 370, y: 403, w: 220, h: 36 };
+// Defense toggle button (below the play buttons)
+const DEFENSE_TOGGLE_BUTTON = { x: 370, y: 491, w: 220, h: 36 };
 
 const CONFIG = {
   winScore: 5,
@@ -108,6 +110,8 @@ const game = {
   passPlayDropbackTarget: 0,     // x coordinate of the 10-yard dropback spot
   rushReactionTimer: 0,          // ms remaining before the rushing defender starts rushing
   cluckNorrisTimer: 0,           // ms remaining before Cluck Norris starts pursuing
+  peteBlockTimer: 0,             // ms remaining on Pete's current block (max 500)
+  peteBlockTargetId: null,       // id of the defender Pete is currently blocking
   selectedDefense: "random",     // "A" | "B" | "random" — player's chosen defensive scheme
   passDefDeepTarget: null        // "horse" | "pete" — which receiver Cluck Norris is assigned (Defense B)
 };

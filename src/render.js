@@ -399,7 +399,9 @@ function buildPlayResultText() {
     sweepRight: "Sweep Right",
     sweepLeft:  "Sweep Left",
     passRight:  "Pass Right",
-    passLeft:   "Pass Left"
+    passLeft:   "Pass Left",
+    diveRight:  "Stretch Right",
+    diveLeft:   "Stretch Left"
   };
   const label = labels[game.playModeLastPlayType] || "Run";
   const rt    = game.playModeLastResultType;
@@ -800,60 +802,216 @@ function drawPauseMenu() {
   ctx.fillText("Back to Home Menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
 }
 
+// Draws a square play diagram inside a button.
+// Coordinate space: left = backfield, right = end zone direction.
+// Top/bottom = field sidelines. Matches the game's top-down view.
+function drawPlayDiagram(play, bx, by, bw, bh) {
+  // Square diagram centred horizontally inside the button
+  const sq    = bh - 22;                         // diagram is as tall as remaining button space
+  const dLeft  = bx + Math.round((bw - sq) / 2); // centred horizontally
+  const dRight = dLeft + sq;
+  const dTop   = by + 20;
+  const dBot   = dTop + sq;
+  const midY   = (dTop + dBot) / 2;
+
+  // LOS splits the square ~45% from the left
+  const losX   = dLeft + Math.round(sq * 0.42);
+
+  ctx.save();
+
+  // Faint field background so the square reads as its own space
+  ctx.fillStyle = "rgba(47,125,50,0.35)";
+  ctx.fillRect(dLeft, dTop, sq, sq);
+
+  // LOS
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 2]);
+  ctx.beginPath();
+  ctx.moveTo(losX, dTop);
+  ctx.lineTo(losX, dBot);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const QB    = "#93c5fd";
+  const HORSE = "#f97316";
+  const PETE  = "#c8a97e";
+
+  // Reference points used as pass-route destinations
+  const d1X  = losX + Math.round(sq * 0.20);
+  const pigY = dTop  + Math.round(sq * 0.18);
+  const hawY = dBot  - Math.round(sq * 0.18);
+
+  function dot(x, y, color, r = 3) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function arrow(sx, sy, ex, ey, color) {
+    const ang = Math.atan2(ey - sy, ex - sx);
+    const hl  = 5;
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - hl * Math.cos(ang - 0.45), ey - hl * Math.sin(ang - 0.45));
+    ctx.lineTo(ex - hl * Math.cos(ang + 0.45), ey - hl * Math.sin(ang + 0.45));
+    ctx.closePath(); ctx.fill();
+  }
+
+  function curve(sx, sy, cpx, cpy, ex, ey, color) {
+    const ang = Math.atan2(ey - cpy, ex - cpx);
+    const hl  = 5;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(cpx, cpy, ex, ey); ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - hl * Math.cos(ang - 0.45), ey - hl * Math.sin(ang - 0.45));
+    ctx.lineTo(ex - hl * Math.cos(ang + 0.45), ey - hl * Math.sin(ang + 0.45));
+    ctx.closePath(); ctx.fill();
+  }
+
+  if (play === "sweepRight") {
+    // Sweep to the BOTTOM edge — Pete leads, horse arcs outward to the edge
+    dot(losX - 3, midY,  QB,   4);
+    dot(losX - 3, dBot - 2, PETE, 3);
+    // Horse starts deep left (middle), sweeps outward toward the bottom edge
+    dot(dLeft + 2, midY, HORSE, 3);
+    curve(dLeft + 2, midY, dLeft + Math.round(sq*0.42), dBot - 2, losX - 3, dBot - 2, HORSE);
+
+  } else if (play === "sweepLeft") {
+    // Sweep to the TOP edge — Pete leads, horse arcs outward to the edge
+    dot(losX - 3, midY, QB, 4);
+    dot(losX - 3, dTop + 2, PETE, 3);
+    // Horse starts deep left (middle), sweeps outward toward the top edge
+    dot(dLeft + 2, midY, HORSE, 3);
+    curve(dLeft + 2, midY, dLeft + Math.round(sq*0.42), dTop + 2, losX - 3, dTop + 2, HORSE);
+
+  } else if (play === "passRight") {
+    // QB drops back; receiver runs deep right-bottom
+    dot(losX - 8, midY, QB, 4);
+    arrow(losX - 8, midY, dLeft + 2, midY, QB);
+    dot(losX + 2, hawY, HORSE, 3);
+    arrow(losX + 2, hawY, dRight, dBot - 2, HORSE);
+    dot(losX - 4, pigY, PETE, 3);
+    arrow(losX - 4, pigY, d1X, pigY, PETE);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(losX - 8, midY); ctx.lineTo(dRight, dBot - 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+  } else if (play === "passLeft") {
+    // QB drops back; receiver runs deep right-top
+    dot(losX - 8, midY, QB, 4);
+    arrow(losX - 8, midY, dLeft + 2, midY, QB);
+    dot(losX + 2, pigY, HORSE, 3);
+    arrow(losX + 2, pigY, dRight, dTop + 2, HORSE);
+    dot(losX - 4, hawY, PETE, 3);
+    arrow(losX - 4, hawY, d1X, hawY, PETE);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(losX - 8, midY); ctx.lineTo(dRight, dTop + 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+  } else if (play === "diveRight") {
+    // Pete arcs down; horse follows for handoff — all pre-snap motion behind LOS
+    dot(losX - 3, midY, QB, 4);
+    arrow(losX - 3, midY, losX - 10, midY + Math.round(sq*0.18), QB);
+    dot(losX - Math.round(sq*0.32), midY, PETE, 3);
+    curve(losX - Math.round(sq*0.32), midY, losX - Math.round(sq*0.14), dBot - 2, losX - 3, midY + Math.round(sq*0.2), PETE);
+    dot(dLeft + 2, midY, HORSE, 3);
+    curve(dLeft + 2, midY, losX - Math.round(sq*0.26), midY + Math.round(sq*0.15), losX - 10, midY + Math.round(sq*0.18), HORSE);
+
+  } else if (play === "diveLeft") {
+    // Mirror — Pete arcs up; horse follows for handoff — all pre-snap motion behind LOS
+    dot(losX - 3, midY, QB, 4);
+    arrow(losX - 3, midY, losX - 10, midY - Math.round(sq*0.18), QB);
+    dot(losX - Math.round(sq*0.32), midY, PETE, 3);
+    curve(losX - Math.round(sq*0.32), midY, losX - Math.round(sq*0.14), dTop + 2, losX - 3, midY - Math.round(sq*0.2), PETE);
+    dot(dLeft + 2, midY, HORSE, 3);
+    curve(dLeft + 2, midY, losX - Math.round(sq*0.26), midY - Math.round(sq*0.15), losX - 10, midY - Math.round(sq*0.18), HORSE);
+  }
+
+  ctx.restore();
+}
+
 function drawPlaySelectOverlay() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
-  ctx.fillRect(230, 155, 500, 300);
+  ctx.fillRect(230, 140, 500, 399);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(230, 155, 500, 300);
+  ctx.strokeRect(230, 140, 500, 399);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 28px Arial";
-  ctx.fillText("Select play", canvas.width / 2, 210);
-  ctx.font = "16px Arial";
+  ctx.font = "bold 24px Arial";
+  ctx.fillText("Select play", canvas.width / 2, 183);
+  ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Down " + game.playModeDown + " of " + game.playModeMaxDowns, canvas.width / 2, 240);
+  ctx.fillText("Down " + game.playModeDown + " of " + game.playModeMaxDowns, canvas.width / 2, 200);
 
   const sr = PLAY_SELECT_BUTTONS.sweepRight;
   const sl = PLAY_SELECT_BUTTONS.sweepLeft;
   const pr = PLAY_SELECT_BUTTONS.passRight;
   const pl = PLAY_SELECT_BUTTONS.passLeft;
+  const dr = PLAY_SELECT_BUTTONS.diveRight;
+  const dl = PLAY_SELECT_BUTTONS.diveLeft;
   ctx.fillStyle = "#374151";
   ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
   ctx.fillRect(sl.x, sl.y, sl.w, sl.h);
   ctx.fillRect(pr.x, pr.y, pr.w, pr.h);
   ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
+  ctx.fillRect(dl.x, dl.y, dl.w, dl.h);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
   ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
   ctx.strokeRect(sl.x, sl.y, sl.w, sl.h);
   ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
   ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.strokeRect(dr.x, dr.y, dr.w, dr.h);
+  ctx.strokeRect(dl.x, dl.y, dl.w, dl.h);
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 16px Arial";
-  ctx.fillText("Sweep Right", sr.x + sr.w / 2, sr.y + sr.h / 2 + 6);
-  ctx.fillText("Sweep Left", sl.x + sl.w / 2, sl.y + sl.h / 2 + 6);
-  ctx.fillText("Pass Right", pr.x + pr.w / 2, pr.y + pr.h / 2 + 6);
-  ctx.fillText("Pass Left", pl.x + pl.w / 2, pl.y + pl.h / 2 + 6);
+  ctx.font = "bold 14px Arial";
+  // Text sits near the top of each button; diagram fills the lower portion
+  ctx.fillText("Sweep Right",   sr.x + sr.w / 2, sr.y + 15);
+  ctx.fillText("Sweep Left",    sl.x + sl.w / 2, sl.y + 15);
+  ctx.fillText("Pass Right",    pr.x + pr.w / 2, pr.y + 15);
+  ctx.fillText("Pass Left",     pl.x + pl.w / 2, pl.y + 15);
+  ctx.fillText("Stretch Right", dr.x + dr.w / 2, dr.y + 15);
+  ctx.fillText("Stretch Left",  dl.x + dl.w / 2, dl.y + 15);
+
+  // Play diagrams
+  drawPlayDiagram("sweepRight", sr.x, sr.y, sr.w, sr.h);
+  drawPlayDiagram("sweepLeft",  sl.x, sl.y, sl.w, sl.h);
+  drawPlayDiagram("passRight",  pr.x, pr.y, pr.w, pr.h);
+  drawPlayDiagram("passLeft",   pl.x, pl.y, pl.w, pl.h);
+  drawPlayDiagram("diveRight",  dr.x, dr.y, dr.w, dr.h);
+  drawPlayDiagram("diveLeft",   dl.x, dl.y, dl.w, dl.h);
 
   // Divider
   ctx.strokeStyle = "#4b5563";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  ctx.moveTo(260, 393);
-  ctx.lineTo(700, 393);
+  ctx.moveTo(260, 479);
+  ctx.lineTo(700, 479);
   ctx.stroke();
   ctx.setLineDash([]);
 
   // Defense label
   ctx.font = "13px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("Defense", canvas.width / 2, 400);
+  ctx.fillText("Defense", canvas.width / 2, 487);
 
   // Defense toggle button
   const dt = DEFENSE_TOGGLE_BUTTON;
@@ -876,10 +1034,10 @@ function drawPlaySelectOverlay() {
     : "Defense: Random";
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 
-  // Small arrows hint
+  // Hint
   ctx.font = "12px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("click to cycle", canvas.width / 2, dt.y + dt.h + 17);
+  ctx.fillText("click to cycle", canvas.width / 2, dt.y + dt.h + 14);
 }
 
 function render() {

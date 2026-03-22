@@ -24,18 +24,21 @@ window.addEventListener("click", (e) => {
     const pm = MENU_BUTTONS.passingMode;
     const pl = MENU_BUTTONS.playMode;
     if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) {
+      stopMenuMusic();
       game.mode = "game";
       game.state = "playing";
       resetPositions();
       return;
     }
     if (p.x >= pm.x && p.x <= pm.x + pm.w && p.y >= pm.y && p.y <= pm.y + pm.h) {
+      stopMenuMusic();
       game.mode = "passing";
       game.state = "playing";
       resetPositions();
       return;
     }
     if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
+      stopMenuMusic();
       startPlayMode();
       return;
     }
@@ -58,6 +61,7 @@ window.addEventListener("click", (e) => {
     if (p.x >= home.x && p.x <= home.x + home.w && p.y >= home.y && p.y <= home.y + home.h) {
       game.state = "menu";
       game.stateBeforePauseMenu = null;
+      startMenuMusic();
       player1.score = 0;
       player2.score = 0;
       game.winner = null;
@@ -98,6 +102,14 @@ window.addEventListener("click", (e) => {
       startPassRightPlay();
     } else if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
       startPassLeftPlay();
+    } else {
+      const dr = PLAY_SELECT_BUTTONS.diveRight;
+      const dl = PLAY_SELECT_BUTTONS.diveLeft;
+      if (p.x >= dr.x && p.x <= dr.x + dr.w && p.y >= dr.y && p.y <= dr.y + dr.h) {
+        startDiveRightPlay();
+      } else if (p.x >= dl.x && p.x <= dl.x + dl.w && p.y >= dl.y && p.y <= dl.y + dl.h) {
+        startDiveLeftPlay();
+      }
     }
     return;
   }
@@ -149,8 +161,12 @@ window.addEventListener("keydown", (e) => {
     startPassRightPlay();
   } else if (key === "4" && game.state === "playModePlaySelect") {
     startPassLeftPlay();
+  } else if (key === "5" && game.state === "playModePlaySelect") {
+    startDiveRightPlay();
+  } else if (key === "6" && game.state === "playModePlaySelect") {
+    startDiveLeftPlay();
   }
-  if ((key === "1" || key === "2" || key === "3" || key === "4") && game.state === "playModePlaySelect") {
+  if (["1","2","3","4","5","6"].includes(key) && game.state === "playModePlaySelect") {
     e.preventDefault();
   }
   if (key === "escape") {
@@ -186,7 +202,13 @@ function updatePlayerInput(dt) {
   dx /= len;
   dy /= len;
 
-  const isPlayMode = game.mode === "play" && (game.playModePhase === "sweep" || game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft");
+  const isPlayMode = game.mode === "play" && (
+    game.playModePhase === "sweep" ||
+    game.playModeCurrentPlay === "passRight" ||
+    game.playModeCurrentPlay === "passLeft" ||
+    (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
+    (game.playModeCurrentPlay === "diveLeft"  && game.playModePhase === "run")
+  );
   if (isPlayMode && ball.carrier === allyHorse) {
     allyHorse.x += dx * allyHorse.speed * dt;
     allyHorse.y += dy * allyHorse.speed * dt;

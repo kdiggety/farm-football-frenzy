@@ -89,6 +89,7 @@ function resetPositions() {
 }
 
 function restartGame() {
+  stopMenuMusic();
   player1.score = 0;
   player2.score = 0;
   game.state = "playing";
@@ -256,8 +257,8 @@ function positionForSweepRight() {
   player1.y = midY;
   allyHorse.x = player1.x - 10 * YARDS_TO_PIXELS;
   allyHorse.y = midY;
-  lilTunnelPete.x = lineX + 15;
-  lilTunnelPete.y = midY - 30;
+  lilTunnelPete.x = lineX;
+  lilTunnelPete.y = FIELD.y + FIELD.height - 50;
   ball.carrier = player1;
   ball.inFlight = false;
   updateBallPosition();
@@ -271,6 +272,9 @@ function startSweepRightPlay() {
   game.playModeCurrentPlay = "sweepRight";
   game.playModePhase = "handoff";
   game.playModeSweepHandoffT = 0;
+  game.playModeSweepArcCY = FIELD.y + FIELD.height / 2;
+  game.peteBlockTimer = 0;
+  game.peteBlockTargetId = null;
   game.state = "playing";
   positionForSweepRight();
 }
@@ -282,8 +286,8 @@ function positionForSweepLeft() {
   player1.y = midY;
   allyHorse.x = player1.x - 10 * YARDS_TO_PIXELS;
   allyHorse.y = midY;
-  lilTunnelPete.x = lineX + 15;
-  lilTunnelPete.y = midY + 30;
+  lilTunnelPete.x = lineX;
+  lilTunnelPete.y = FIELD.y + 50;
   ball.carrier = player1;
   ball.inFlight = false;
   updateBallPosition();
@@ -297,6 +301,9 @@ function startSweepLeftPlay() {
   game.playModeCurrentPlay = "sweepLeft";
   game.playModePhase = "handoff";
   game.playModeSweepHandoffT = 0;
+  game.playModeSweepArcCY = FIELD.y + FIELD.height / 2;
+  game.peteBlockTimer = 0;
+  game.peteBlockTargetId = null;
   game.state = "playing";
   positionForSweepLeft();
 }
@@ -357,6 +364,302 @@ function startPassLeftPlay() {
   game.playModePhase = null;
   game.state = "playing";
   positionForPassLeft();
+}
+
+function positionForDiveRight() {
+  const midY = FIELD.y + FIELD.height / 2;
+  const lineX = game.playModeLineX;
+  const r = 5 * YARDS_TO_PIXELS;
+  // QB at the line of scrimmage
+  player1.x = lineX;
+  player1.y = midY;
+  // Pete starts at the arc's t=0 position (2r behind QB, same Y)
+  lilTunnelPete.x = lineX - 2 * r;
+  lilTunnelPete.y = midY;
+  // Horse starts just behind Pete, ready to trail him through the arc
+  allyHorse.x = lineX - 2 * r - 3 * YARDS_TO_PIXELS;
+  allyHorse.y = midY;
+  ball.carrier = player1;
+  ball.inFlight = false;
+  updateBallPosition();
+  positionDefenseForPlay();
+  game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
+  game.peteBlockTimer = 0;
+  game.peteBlockTargetId = null;
+  game.playModeSweepHandoffT = 0;
+}
+
+function startDiveRightPlay() {
+  game.playModeCurrentPlay = "diveRight";
+  game.playModePhase = "handoff";
+  game.state = "playing";
+  positionForDiveRight();
+}
+
+// Pete's blocker logic for Dive Right: target the outside defender
+// (highest Y = furthest toward the sideline the play runs toward).
+function moveDiveRightDefenders(dt) {
+  const tx = ball.carrier ? ball.carrier.x : ball.x;
+  const ty = ball.carrier ? ball.carrier.y : ball.y;
+
+  // Pete always blocks Deputy Hee-Haw on Dive Right
+  const blockTarget = allyDonkey;
+
+  if (blockTarget.id !== game.peteBlockTargetId) {
+    game.peteBlockTargetId = blockTarget.id;
+    game.peteBlockTimer = 1300;
+  }
+  const peteInContact = circleTouch(lilTunnelPete, blockTarget);
+  if (peteInContact && game.peteBlockTimer > 0) {
+    game.peteBlockTimer -= dt * 1000;
+  }
+  const blockActive = peteInContact && game.peteBlockTimer > 0;
+
+  // Chase Hee-Haw to make contact; once blocking, plant feet so he can escape
+  if (!blockActive) {
+    moveToward(lilTunnelPete, allyDonkey.x, allyDonkey.y, lilTunnelPete.speed, dt);
+  }
+  clampPlayerToField(lilTunnelPete);
+
+  const pigSpd  = (blockActive && blockTarget === player2)    ? player2.speed    * 0.45 : player2.speed;
+  const hawSpd  = (blockActive && blockTarget === allyDonkey) ? allyDonkey.speed * 0.45 : allyDonkey.speed;
+  const coopSpd = (blockActive && blockTarget === cluckNorris)? cluckNorris.speed* 0.45 : cluckNorris.speed;
+
+  if (game.playModeDefense === "A" && game.defenseReactionTimer > 0) {
+    game.defenseReactionTimer -= dt * 1000;
+  } else {
+    moveToward(player2,    tx, ty, pigSpd, dt); clampPlayerToField(player2);
+    moveToward(allyDonkey, tx, ty, hawSpd, dt); clampPlayerToField(allyDonkey);
+  }
+
+  if (game.cluckNorrisTimer > 0) {
+    game.cluckNorrisTimer -= dt * 1000;
+  } else {
+    moveToward(cluckNorris, tx, ty, coopSpd, dt);
+    clampPlayerToField(cluckNorris);
+  }
+}
+
+function updatePlayModeDiveRight(dt) {
+  const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
+
+  if (game.playModePhase === "handoff") {
+    // Pete runs the same quarter-circle arc the RB uses on Sweep Right.
+    // Arc center is pinned to the original line of scrimmage so it stays
+    // stable while the QB moves.
+    const r = 5 * YARDS_TO_PIXELS;
+    const cx = game.playModeLineX - r;
+    const cy = FIELD.y + FIELD.height / 2;
+    const arcLength = (Math.PI / 2) * r;
+    game.playModeSweepHandoffT = Math.min(1, game.playModeSweepHandoffT + (lilTunnelPete.speed * dt) / arcLength);
+    const angle = Math.PI - game.playModeSweepHandoffT * (Math.PI / 2);
+    lilTunnelPete.x = cx + r * Math.cos(angle);
+    lilTunnelPete.y = cy + r * Math.sin(angle);
+
+    // Horse trails Pete through the arc
+    moveToward(allyHorse, lilTunnelPete.x, lilTunnelPete.y, allyHorse.speed, dt);
+    clampPlayerToField(allyHorse);
+
+    // QB walks toward the RB so the handoff looks physical
+    moveToward(player1, allyHorse.x, allyHorse.y, player1.speed, dt);
+    clampPlayerToField(player1);
+
+    // Defenders react to QB (who holds the ball)
+    if (game.playModeDefense === "A" && game.defenseReactionTimer > 0) {
+      game.defenseReactionTimer -= dt * 1000;
+    } else {
+      moveToward(player2,    player1.x, player1.y, player2.speed,    dt); clampPlayerToField(player2);
+      moveToward(allyDonkey, player1.x, player1.y, allyDonkey.speed, dt); clampPlayerToField(allyDonkey);
+    }
+    if (game.cluckNorrisTimer > 0) {
+      game.cluckNorrisTimer -= dt * 1000;
+    } else {
+      moveToward(cluckNorris, player1.x, player1.y, cluckNorris.speed, dt);
+      clampPlayerToField(cluckNorris);
+    }
+
+    updateBallPosition();
+
+    // Sack before the handoff
+    if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
+      setPlayDowned(player1.x, { tackle: true, sack: true });
+      return;
+    }
+
+    // Handoff when QB physically reaches the RB (or arc fully completes as fallback)
+    if (circleTouch(player1, allyHorse) || game.playModeSweepHandoffT >= 1) {
+      ball.carrier = allyHorse;
+      game.playModePhase = "run";
+      updateBallPosition();
+    }
+    return;
+  }
+
+  if (game.playModePhase === "run") {
+    updatePlayerInput(dt);
+    clampPlayerToField(allyHorse);
+    moveDiveRightDefenders(dt);
+    updateBallPosition();
+
+    if (allyHorse.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(allyHorse);
+      return;
+    }
+    if (circleTackle(allyHorse, player2) || circleTackle(allyHorse, allyDonkey) || circleTackle(allyHorse, cluckNorris)) {
+      setPlayDowned(allyHorse.x, { tackle: true });
+      return;
+    }
+  }
+}
+
+// ── Dive Left (mirror of Dive Right — arc curves upward toward top sideline) ──
+
+function moveDiveLeftDefenders(dt) {
+  const tx = ball.carrier ? ball.carrier.x : ball.x;
+  const ty = ball.carrier ? ball.carrier.y : ball.y;
+
+  // Pete always blocks Professor Pig on Dive Left (the outside defender toward the top)
+  const blockTarget = player2;
+
+  if (blockTarget.id !== game.peteBlockTargetId) {
+    game.peteBlockTargetId = blockTarget.id;
+    game.peteBlockTimer = 1300;
+  }
+  const peteInContact = circleTouch(lilTunnelPete, blockTarget);
+  if (peteInContact && game.peteBlockTimer > 0) {
+    game.peteBlockTimer -= dt * 1000;
+  }
+  const blockActive = peteInContact && game.peteBlockTimer > 0;
+
+  if (!blockActive) {
+    moveToward(lilTunnelPete, player2.x, player2.y, lilTunnelPete.speed, dt);
+  }
+  clampPlayerToField(lilTunnelPete);
+
+  const pigSpd  = (blockActive && blockTarget === player2)    ? player2.speed    * 0.45 : player2.speed;
+  const hawSpd  = (blockActive && blockTarget === allyDonkey) ? allyDonkey.speed * 0.45 : allyDonkey.speed;
+  const coopSpd = (blockActive && blockTarget === cluckNorris)? cluckNorris.speed* 0.45 : cluckNorris.speed;
+
+  if (game.playModeDefense === "A" && game.defenseReactionTimer > 0) {
+    game.defenseReactionTimer -= dt * 1000;
+  } else {
+    moveToward(player2,    tx, ty, pigSpd, dt); clampPlayerToField(player2);
+    moveToward(allyDonkey, tx, ty, hawSpd, dt); clampPlayerToField(allyDonkey);
+  }
+
+  if (game.cluckNorrisTimer > 0) {
+    game.cluckNorrisTimer -= dt * 1000;
+  } else {
+    moveToward(cluckNorris, tx, ty, coopSpd, dt);
+    clampPlayerToField(cluckNorris);
+  }
+}
+
+function positionForDiveLeft() {
+  const midY = FIELD.y + FIELD.height / 2;
+  const lineX = game.playModeLineX;
+  const r = 5 * YARDS_TO_PIXELS;
+  player1.x = lineX;
+  player1.y = midY;
+  lilTunnelPete.x = lineX - 2 * r;
+  lilTunnelPete.y = midY;
+  allyHorse.x = lineX - 2 * r - 3 * YARDS_TO_PIXELS;
+  allyHorse.y = midY;
+  ball.carrier = player1;
+  ball.inFlight = false;
+  updateBallPosition();
+  positionDefenseForPlay();
+  game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
+  game.peteBlockTimer = 0;
+  game.peteBlockTargetId = null;
+  game.playModeSweepHandoffT = 0;
+}
+
+function startDiveLeftPlay() {
+  game.playModeCurrentPlay = "diveLeft";
+  game.playModePhase = "handoff";
+  game.state = "playing";
+  positionForDiveLeft();
+}
+
+function updatePlayModeDiveLeft(dt) {
+  const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
+
+  if (game.playModePhase === "handoff") {
+    // Pete runs the mirror arc — curving upward toward the top sideline
+    const r = 5 * YARDS_TO_PIXELS;
+    const cx = game.playModeLineX - r;
+    const cy = FIELD.y + FIELD.height / 2;
+    const arcLength = (Math.PI / 2) * r;
+    game.playModeSweepHandoffT = Math.min(1, game.playModeSweepHandoffT + (lilTunnelPete.speed * dt) / arcLength);
+    const angle = Math.PI + game.playModeSweepHandoffT * (Math.PI / 2);
+    lilTunnelPete.x = cx + r * Math.cos(angle);
+    lilTunnelPete.y = cy + r * Math.sin(angle);
+
+    // Horse trails Pete through the arc
+    moveToward(allyHorse, lilTunnelPete.x, lilTunnelPete.y, allyHorse.speed, dt);
+    clampPlayerToField(allyHorse);
+
+    // QB walks toward the RB to hand off
+    moveToward(player1, allyHorse.x, allyHorse.y, player1.speed, dt);
+    clampPlayerToField(player1);
+
+    // Defenders react to QB
+    if (game.playModeDefense === "A" && game.defenseReactionTimer > 0) {
+      game.defenseReactionTimer -= dt * 1000;
+    } else {
+      moveToward(player2,    player1.x, player1.y, player2.speed,    dt); clampPlayerToField(player2);
+      moveToward(allyDonkey, player1.x, player1.y, allyDonkey.speed, dt); clampPlayerToField(allyDonkey);
+    }
+    if (game.cluckNorrisTimer > 0) {
+      game.cluckNorrisTimer -= dt * 1000;
+    } else {
+      moveToward(cluckNorris, player1.x, player1.y, cluckNorris.speed, dt);
+      clampPlayerToField(cluckNorris);
+    }
+
+    updateBallPosition();
+
+    if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
+      setPlayDowned(player1.x, { tackle: true, sack: true });
+      return;
+    }
+
+    if (circleTouch(player1, allyHorse) || game.playModeSweepHandoffT >= 1) {
+      ball.carrier = allyHorse;
+      game.playModePhase = "run";
+      updateBallPosition();
+    }
+    return;
+  }
+
+  if (game.playModePhase === "run") {
+    updatePlayerInput(dt);
+    clampPlayerToField(allyHorse);
+    moveDiveLeftDefenders(dt);
+    updateBallPosition();
+
+    if (allyHorse.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(allyHorse);
+      return;
+    }
+    if (circleTackle(allyHorse, player2) || circleTackle(allyHorse, allyDonkey) || circleTackle(allyHorse, cluckNorris)) {
+      setPlayDowned(allyHorse.x, { tackle: true });
+      return;
+    }
+  }
 }
 
 function startPlayMode() {
@@ -521,6 +824,33 @@ function scorePoint(scorer) {
   }
 }
 
+// Prevent any two characters from overlapping more than half their body (radius).
+// Minimum allowed center-to-center distance = playerRadius (one radius = 50% overlap threshold).
+function resolveCharacterCollisions() {
+  const chars = [player1, player2, allyHorse, allyDonkey, cluckNorris, lilTunnelPete];
+  const minDist = CONFIG.playerRadius;
+  for (let i = 0; i < chars.length; i++) {
+    for (let j = i + 1; j < chars.length; j++) {
+      const a = chars[i];
+      const b = chars[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0 && dist < minDist) {
+        const push = (minDist - dist) / 2;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+        clampPlayerToField(a);
+        clampPlayerToField(b);
+      }
+    }
+  }
+}
+
 function updatePlaying(dt) {
   if (game.mode === "play") {
     updatePlayMode(dt);
@@ -570,6 +900,7 @@ function updatePlaying(dt) {
     tryPickupBall();
     handleCarrierCollisionSteal();
   }
+  resolveCharacterCollisions();
   updateBallPosition();
   checkTouchdown();
 }
@@ -618,6 +949,14 @@ function updatePlayMode(dt) {
     updatePlayModePassLeft(dt);
     return;
   }
+  if (game.playModeCurrentPlay === "diveRight") {
+    updatePlayModeDiveRight(dt);
+    return;
+  }
+  if (game.playModeCurrentPlay === "diveLeft") {
+    updatePlayModeDiveLeft(dt);
+    return;
+  }
   updatePlayerInput(dt);
   updateCPU(dt);
   updateAllies(dt);
@@ -638,45 +977,74 @@ function updatePlayMode(dt) {
 }
 
 // Defense A on run plays: both defenders pause for defenseReactionTimer ms
+
 function moveSweepDefenders(dt) {
+  const tx = ball.carrier ? ball.carrier.x : ball.x;
+  const ty = ball.carrier ? ball.carrier.y : ball.y;
+
+  // Pete finds his nearest defender and moves to the midpoint between that
+  // defender and the ball carrier — getting his body in the passing lane.
+  // resolveCharacterCollisions then naturally pushes the defender sideways.
+  const dPig  = distance(lilTunnelPete.x, lilTunnelPete.y, player2.x,    player2.y);
+  const dHaw  = distance(lilTunnelPete.x, lilTunnelPete.y, allyDonkey.x, allyDonkey.y);
+  const dCoop = distance(lilTunnelPete.x, lilTunnelPete.y, cluckNorris.x, cluckNorris.y);
+  let blockTarget = player2;
+  if (dHaw  < dPig  && dHaw  <= dCoop) blockTarget = allyDonkey;
+  if (dCoop < dPig  && dCoop < dHaw)   blockTarget = cluckNorris;
+
+  // Pete can only block one defender at a time for up to 1.7 seconds
+  if (blockTarget.id !== game.peteBlockTargetId) {
+    game.peteBlockTargetId = blockTarget.id;
+    game.peteBlockTimer = 1300;
+  }
+  const peteInContact = circleTouch(lilTunnelPete, blockTarget);
+  if (peteInContact && game.peteBlockTimer > 0) {
+    game.peteBlockTimer -= dt * 1000;
+  }
+  const blockActive = peteInContact && game.peteBlockTimer > 0;
+
+  // Chase the target to make contact; once blocking, plant feet so defender can escape
+  if (!blockActive) {
+    moveToward(lilTunnelPete, blockTarget.x, blockTarget.y, lilTunnelPete.speed, dt);
+  }
+  clampPlayerToField(lilTunnelPete);
+
+  // Only the designated block target is slowed, and only while the block is active
+  const pigSpd  = (blockActive && blockTarget === player2)    ? player2.speed    * 0.45 : player2.speed;
+  const hawSpd  = (blockActive && blockTarget === allyDonkey) ? allyDonkey.speed * 0.45 : allyDonkey.speed;
+  const coopSpd = (blockActive && blockTarget === cluckNorris)? cluckNorris.speed* 0.45 : cluckNorris.speed;
+
   if (game.playModeDefense === "A" && game.defenseReactionTimer > 0) {
     game.defenseReactionTimer -= dt * 1000;
   } else {
-    // Target the carrier's center, not the ball graphic (which floats above the carrier)
-    const tx = ball.carrier ? ball.carrier.x : ball.x;
-    const ty = ball.carrier ? ball.carrier.y : ball.y;
-    moveToward(player2,    tx, ty, player2.speed,    dt);
-    moveToward(allyDonkey, tx, ty, allyDonkey.speed, dt);
-    clampPlayerToField(player2);
-    clampPlayerToField(allyDonkey);
+    moveToward(player2,    tx, ty, pigSpd, dt); clampPlayerToField(player2);
+    moveToward(allyDonkey, tx, ty, hawSpd, dt); clampPlayerToField(allyDonkey);
   }
 
-  // Cluck Norris charges in late — additional pressure
   if (game.cluckNorrisTimer > 0) {
     game.cluckNorrisTimer -= dt * 1000;
   } else {
-    const tx = ball.carrier ? ball.carrier.x : ball.x;
-    const ty = ball.carrier ? ball.carrier.y : ball.y;
-    moveToward(cluckNorris, tx, ty, cluckNorris.speed, dt);
+    moveToward(cluckNorris, tx, ty, coopSpd, dt);
     clampPlayerToField(cluckNorris);
   }
-
-  // Lil' Tunnel Pete runs forward as lead blocker
-  lilTunnelPete.x += lilTunnelPete.speed * dt;
-  clampPlayerToField(lilTunnelPete);
 }
 
 function updatePlayModeSweepRight(dt) {
   if (game.playModePhase === "handoff") {
     const r = 10 * YARDS_TO_PIXELS;  // sweep arc radius = 10 yards
-    const cx = player1.x - r;
-    const cy = player1.y;
+    // Arc center is pinned to initial LOS so it stays stable as QB rolls out
+    const cx = game.playModeLineX - r;
+    const cy = game.playModeSweepArcCY;
     const arcLength = (Math.PI / 2) * r;
     game.playModeSweepHandoffT = Math.min(1, game.playModeSweepHandoffT + (allyHorse.speed * dt) / arcLength);
     // Quarter circle from PI (left) to PI/2 (down) — flipped so RB sweeps down instead of up
     const angle = Math.PI - game.playModeSweepHandoffT * (Math.PI / 2);
     allyHorse.x = cx + r * Math.cos(angle);
     allyHorse.y = cy + r * Math.sin(angle);
+    // QB rolls out — backward away from LOS and toward the sweep side
+    player1.x -= player1.speed * 0.6 * dt;
+    player1.y += player1.speed * 0.7 * dt;
+    clampPlayerToField(player1);
     updateBallPosition();
     // QB still has the ball — if a defender reaches him before the toss, it's a sack
     if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
@@ -692,7 +1060,7 @@ function updatePlayModeSweepRight(dt) {
         game.playModeSweepHandoffT = 1;
       }
     }
-    if (game.playModeSweepHandoffT >= 1) {
+    if (game.playModeSweepHandoffT >= 0.4) {
       game.playModePhase = "toss";
       ball.carrier = null;
       ball.inFlight = true;
@@ -715,6 +1083,10 @@ function updatePlayModeSweepRight(dt) {
     // RB runs toward the lead point so he meets the ball
     allyHorse.x += allyHorse.speed * dt;
     clampPlayerToField(allyHorse);
+    // QB continues rolling out — backward and toward the sweep side
+    player1.x -= player1.speed * 0.6 * dt;
+    player1.y += player1.speed * 0.7 * dt;
+    clampPlayerToField(player1);
     const dx = ball.targetX - ball.x;
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
@@ -758,13 +1130,18 @@ function updatePlayModeSweepRight(dt) {
 function updatePlayModeSweepLeft(dt) {
   if (game.playModePhase === "handoff") {
     const r = 10 * YARDS_TO_PIXELS;
-    const cx = player1.x - r;
-    const cy = player1.y;
+    // Arc center is pinned to initial LOS so it stays stable as QB rolls out
+    const cx = game.playModeLineX - r;
+    const cy = game.playModeSweepArcCY;
     const arcLength = (Math.PI / 2) * r;
     game.playModeSweepHandoffT = Math.min(1, game.playModeSweepHandoffT + (allyHorse.speed * dt) / arcLength);
     const angle = Math.PI + game.playModeSweepHandoffT * (Math.PI / 2);
     allyHorse.x = cx + r * Math.cos(angle);
     allyHorse.y = cy + r * Math.sin(angle);
+    // QB rolls out — backward away from LOS and toward the sweep side
+    player1.x -= player1.speed * 0.6 * dt;
+    player1.y -= player1.speed * 0.7 * dt;
+    clampPlayerToField(player1);
     updateBallPosition();
     // QB still has the ball — if a defender reaches him before the toss, it's a sack
     if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
@@ -780,7 +1157,7 @@ function updatePlayModeSweepLeft(dt) {
         game.playModeSweepHandoffT = 1;
       }
     }
-    if (game.playModeSweepHandoffT >= 1) {
+    if (game.playModeSweepHandoffT >= 0.4) {
       game.playModePhase = "toss";
       ball.carrier = null;
       ball.inFlight = true;
@@ -802,6 +1179,10 @@ function updatePlayModeSweepLeft(dt) {
   if (game.playModePhase === "toss") {
     allyHorse.y -= allyHorse.speed * dt;
     clampPlayerToField(allyHorse);
+    // QB continues rolling out — backward and toward the sweep side
+    player1.x -= player1.speed * 0.6 * dt;
+    player1.y -= player1.speed * 0.7 * dt;
+    clampPlayerToField(player1);
     const dx = ball.targetX - ball.x;
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
