@@ -1,5 +1,5 @@
 // =========================================================
-// Audio — touchdown announcement + animal sounds + menu music
+// Audio — touchdown announcement + animal sounds + menu music + game music
 // =========================================================
 
 // ── Menu music ────────────────────────────────────────────
@@ -9,6 +9,7 @@ menuMusic.volume = 0.5;
 let _menuMusicState = null; // "playing" | "stopped"
 
 function startMenuMusic() {
+  stopGameMusic();
   if (_menuMusicState === "playing") return;
   _menuMusicState = "playing";
   menuMusic.currentTime = 0;
@@ -20,6 +21,41 @@ function stopMenuMusic() {
   _menuMusicState = "stopped";
   menuMusic.pause();
   menuMusic.currentTime = 0;
+}
+
+// ── Game / Passing / Play mode music ──────────────────────
+const gameMusic = document.getElementById("gameMusic");
+gameMusic.volume = 0.45;
+
+let _gameMusicState = null;
+
+function shouldPlayGameMusic() {
+  if (typeof game === "undefined") return false;
+  if (game.mode !== "game" && game.mode !== "passing" && game.mode !== "play") return false;
+  if (game.state === "menu") return false;
+  return true;
+}
+
+// Replay when the track ends (loop attr would block "ended", so we handle it here)
+gameMusic.addEventListener("ended", () => {
+  if (_gameMusicState !== "playing" || !shouldPlayGameMusic()) return;
+  gameMusic.currentTime = 0;
+  gameMusic.play().catch(() => {});
+});
+
+function startGameMusic() {
+  stopMenuMusic();
+  if (_gameMusicState === "playing") return;
+  _gameMusicState = "playing";
+  gameMusic.currentTime = 0;
+  gameMusic.play().catch(() => {});
+}
+
+function stopGameMusic() {
+  if (_gameMusicState === "stopped") return;
+  _gameMusicState = "stopped";
+  gameMusic.pause();
+  gameMusic.currentTime = 0;
 }
 
 // Start music on first user interaction (browser autoplay policy)

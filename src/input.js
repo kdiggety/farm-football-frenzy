@@ -24,21 +24,20 @@ window.addEventListener("click", (e) => {
     const pm = MENU_BUTTONS.passingMode;
     const pl = MENU_BUTTONS.playMode;
     if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) {
-      stopMenuMusic();
+      startGameMusic();
       game.mode = "game";
       game.state = "playing";
       resetPositions();
       return;
     }
     if (p.x >= pm.x && p.x <= pm.x + pm.w && p.y >= pm.y && p.y <= pm.y + pm.h) {
-      stopMenuMusic();
+      startGameMusic();
       game.mode = "passing";
       game.state = "playing";
       resetPositions();
       return;
     }
     if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
-      stopMenuMusic();
       startPlayMode();
       return;
     }

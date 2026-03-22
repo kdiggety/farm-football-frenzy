@@ -89,7 +89,8 @@ function resetPositions() {
 }
 
 function restartGame() {
-  stopMenuMusic();
+  stopGameMusic();
+  startGameMusic();
   player1.score = 0;
   player2.score = 0;
   game.state = "playing";
@@ -668,6 +669,7 @@ function startPlayMode() {
   game.winner = null;
   game.scorePauseTimer = 0;
   game.scoredBy = null;
+  startGameMusic();
   startPlayModeDrive();
 }
 
