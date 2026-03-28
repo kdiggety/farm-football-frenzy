@@ -28,17 +28,25 @@
       transition: transform 0.1s;
     }
     button:active { transform: scale(0.96); }
-    #btn-horse  { background: #2563eb; color: #fff; }
-    #btn-bunny  { background: #16a34a; color: #fff; }
-    #btn-both   { background: #d97706; color: #fff; }
+    #btn-horse      { background: #2563eb; color: #fff; }
+    #btn-bunny      { background: #16a34a; color: #fff; }
+    #btn-both       { background: #d97706; color: #fff; }
+    #btn-announcer  { background: #dc2626; color: #fff; }
+    #btn-safety     { background: #a855f7; color: #fff; }
   </style>
 </head>
 <body>
   <h1>🏈 Touchdown Audio Preview</h1>
   <p>Click a button to hear the sound. Your browser may ask for audio permission on first click.</p>
-  <button id="btn-horse"  onclick="previewHorse()">🐴 Sir Neigh-a-Lot scores</button>
-  <button id="btn-bunny"  onclick="previewBunny()">🐰 Barnaby scores</button>
-  <button id="btn-both"   onclick="previewBoth()">🎙️ Voice + Animal (full TD)</button>
+  <p style="max-width: 540px; text-align: center; font-size: 13px; color: #888;">Announcer line uses <strong>en-US</strong> male TTS. <strong>Safety</strong> plays a <strong>recorded</strong> excited female clip (<code>audio/safety_excited_female.aiff</code>); if it can’t load, speech synthesis is used instead.</p>
+  <button id="btn-horse"      onclick="previewHorse()">🐴 Sir Neigh-a-Lot scores</button>
+  <button id="btn-bunny"      onclick="previewBunny()">🐰 Barnaby scores</button>
+  <button id="btn-both"       onclick="previewBoth()">🎙️ Voice + Animal (full TD)</button>
+  <button id="btn-announcer"  onclick="previewAnnouncerTouchdown()">📣 Excited announcer — touchdown!</button>
+  <button id="btn-safety"     onclick="previewSafety()">🛡️ Safety — excited female voice</button>
+
+  <!-- Recorded clip (macOS Samantha @ 340 wpm): excited female “Safety! Safety!” -->
+  <audio id="safetyFemaleYell" preload="auto" src="audio/safety_excited_female.aiff"></audio>
 
 <script>
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -118,6 +126,205 @@ function pickBestVoice(voices) {
   );
 }
 
+/** Prefer a natural-sounding male English voice (names differ per OS / Chrome / Safari). */
+function isLikelyFemaleVoice(v) {
+  const n = (v.name + " " + (v.voiceURI || "")).toLowerCase();
+  return /female|woman|\bf\b|samantha|karen|victoria|zira|susan|moira|fiona|tessa|veena|joanna|ivy|kimberly|linda|heather|sonia|emma|serena|sarah|amy|aria|jenny|nicole|hazel|michelle|hannah|lisa|catherine|martha|stephanie|zoey|siri|victoria|shelley|helen|kate|emily|olivia|amelia|google.*english.*female|microsoft.*zira|microsoft.*hazel|microsoft.*susan|microsoft.*aria/i.test(n);
+}
+
+function isLikelyMaleVoice(v) {
+  const n = (v.name + " " + (v.voiceURI || "")).toLowerCase();
+  if (isLikelyFemaleVoice(v)) return false;
+  return (
+    /\bmale\b|google.*english.*male|microsoft\s*mark|microsoft\s*david|microsoft\s*george|microsoft\s*guy|siri.*male|daniel|fred|aaron|arthur|gordon|ralph|tom\s*\(|thomas|james|john|michael|richard|oliver|narrator|lee\s*male|male/i.test(n)
+  );
+}
+
+function voiceKey(v) {
+  return (v.name + " " + (v.voiceURI || "")).toLowerCase();
+}
+
+function voiceLangNorm(v) {
+  return (v.lang || "").toLowerCase().replace("_", "-");
+}
+
+/** True only for U.S. English locale (not UK / AU / IE). */
+function isStrictUSEnglish(v) {
+  const l = voiceLangNorm(v);
+  if (l === "en-us" || l.startsWith("en-us")) return true;
+  const k = voiceKey(v);
+  return /\bamerican\b|u\.s\. english|united states english|english \(united states\)|english \(america\)|\(america\)|\(united states\)/i.test(k);
+}
+
+/** Generic "en" with explicit US labeling (some Chrome builds use lang "en"). */
+function isLooseUSEnglish(v) {
+  if (isStrictUSEnglish(v)) return true;
+  const l = voiceLangNorm(v);
+  if (l !== "en" && l !== "en-us") return false;
+  const k = voiceKey(v);
+  return /\bunited states\b|\bu\.s\.\b.*english|google.*\bus\b.*english.*male|google us english|microsoft.*\b(david|mark|guy)\b|american english/i.test(k);
+}
+
+/** UK / Commonwealth voices that often get picked as “English”. */
+function isBritishOrCommonwealthAccent(v) {
+  const l = voiceLangNorm(v);
+  if (/^en-gb|^en-au|^en-nz|^en-ie|^en-in\b|^en-za\b/.test(l)) return true;
+  const k = voiceKey(v);
+  return (
+    /\bunited kingdom\b|\bbritish\b|\bengland\b|\bscottish\b|\baustralian\b|\bireland\b|\buk english\b|\benglish \(uk\)|siri.*\(uk\)|google.*english.*\(uk\)/i.test(k) ||
+    // Browser “English” defaults that are usually RP / UK
+    /\bdaniel\b|\boliver\b|\barthur\b|\bgordon\b|\bmalcolm\b|\bbaden\b|\bfred\b.*\(uk\)|\btessa\b|\bmartha\b|\bcatherine\b|\bserena\b/i.test(k)
+  );
+}
+
+/**
+ * U.S. male sports-booth style — avoids en-GB / Daniel / Oliver-type UK voices.
+ * Biases toward en-US + Google/Microsoft US male.
+ */
+function pickUSMaleAnnouncerVoice(voices) {
+  const list = voices.length ? voices : speechSynthesis.getVoices();
+  const k = voiceKey;
+
+  let pool = list.filter(
+    v =>
+      (isStrictUSEnglish(v) || isLooseUSEnglish(v)) &&
+      !isBritishOrCommonwealthAccent(v) &&
+      !isLikelyFemaleVoice(v)
+  );
+
+  const prefer = (arr, fn) => arr.find(fn) || null;
+
+  let pick =
+    prefer(pool, v => /google.*u\.?s\.?.*english.*male|google us english male/i.test(k(v))) ||
+    prefer(pool, v => /microsoft.*\b(david|mark|guy)\b/i.test(k(v))) ||
+    prefer(pool, v => /\bmale\b/i.test(k(v)) && !isBritishOrCommonwealthAccent(v)) ||
+    prefer(pool, v => /\baaron\b|\btom\b|\bfred\b/i.test(k(v)) && isStrictUSEnglish(v)) ||
+    pool[0];
+
+  if (!pick) {
+    pool = list.filter(
+      v => (isStrictUSEnglish(v) || isLooseUSEnglish(v)) && !isLikelyFemaleVoice(v)
+    );
+    pick = pool[0];
+  }
+  if (!pick) {
+    pool = list.filter(v => /^en[-_]us/i.test(voiceLangNorm(v)) && !isLikelyFemaleVoice(v));
+    pick = pool[0];
+  }
+  if (!pick) return pickBestVoice(list);
+  return pick;
+}
+
+/** en + explicit US female labeling (Chrome “Google US English Female”, etc.). */
+function isLooseUSFemaleEnglish(v) {
+  if (isStrictUSEnglish(v)) return true;
+  const l = voiceLangNorm(v);
+  if (l !== "en" && l !== "en-us") return false;
+  const t = voiceKey(v);
+  return /google.*\bus\b.*english.*female|google us english female|microsoft.*\b(zira|hazel|susan|aria|jenny|michelle)\b/i.test(t);
+}
+
+function isExplicitUSFemaleVoice(v) {
+  const t = voiceKey(v);
+  return isLikelyFemaleVoice(v) || /google.*u\.?s\.?.*english.*female|google us english female/i.test(t);
+}
+
+function pickUSFemaleExcitedVoice(voices) {
+  const list = voices.length ? voices : speechSynthesis.getVoices();
+  const k = voiceKey;
+  const usOk = v =>
+    (isStrictUSEnglish(v) ||
+      /^en[-_]us/i.test(voiceLangNorm(v)) ||
+      isLooseUSEnglish(v) ||
+      isLooseUSFemaleEnglish(v)) &&
+    !isBritishOrCommonwealthAccent(v);
+
+  let pool = list.filter(v => usOk(v) && isExplicitUSFemaleVoice(v));
+  const prefer = (arr, fn) => arr.find(fn) || null;
+
+  let pick =
+    prefer(pool, v => /google.*u\.?s\.?.*english.*female|google us english female/i.test(k(v))) ||
+    prefer(pool, v => /neural|enhanced|premium/i.test(k(v)) && isLikelyFemaleVoice(v)) ||
+    prefer(pool, v => /microsoft.*(zira|hazel|susan|aria)|\bsamantha\b|\bvictoria\b/i.test(k(v))) ||
+    pool[0];
+
+  if (!pick) {
+    pool = list.filter(v => /^en[-_]us/i.test(voiceLangNorm(v)) && isLikelyFemaleVoice(v));
+    pick = pool[0];
+  }
+  if (!pick) {
+    pool = list.filter(v => isLikelyFemaleVoice(v) && !isBritishOrCommonwealthAccent(v));
+    pick = pool[0];
+  }
+  if (!pick) return pickBestVoice(list);
+  return pick;
+}
+
+/** Fallback if the recorded Safety clip can’t load or play (browser / missing file). */
+function saySafetyTTSFallback() {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance("Safety! Safety!");
+  utter.lang = "en-US";
+  utter.rate = 1.2 + Math.random() * 0.12;
+  utter.pitch = 1.08 + Math.random() * 0.12;
+  utter.volume = 1;
+  const femaleVoice = pickUSFemaleExcitedVoice(speechSynthesis.getVoices());
+  if (femaleVoice) utter.voice = femaleVoice;
+  speakUtteranceSafe(utter);
+}
+
+/** Stale voice refs (from a previous getVoices()) can make speak() silent — drop it. */
+function sanitizeUtteranceVoice(utter) {
+  if (!utter.voice) return;
+  const valid = new Set(speechSynthesis.getVoices().map(v => v.voiceURI));
+  if (!valid.has(utter.voice.voiceURI)) utter.voice = null;
+}
+
+/** Required for Safari/iOS: speak() must run in the same user-gesture tick as the click. */
+function speakUtteranceSafe(utter) {
+  sanitizeUtteranceVoice(utter);
+  try {
+    if (typeof speechSynthesis.resume === "function" && speechSynthesis.paused) {
+      speechSynthesis.resume();
+    }
+    speechSynthesis.speak(utter);
+  } catch (e) {
+    try {
+      const u2 = new SpeechSynthesisUtterance(utter.text);
+      u2.lang = utter.lang || "en-US";
+      u2.rate = utter.rate;
+      u2.pitch = utter.pitch;
+      u2.volume = utter.volume;
+      speechSynthesis.speak(u2);
+    } catch (e2) {
+      console.warn("Speech synthesis failed:", e2);
+    }
+  }
+}
+
+function previewSafety() {
+  resumeAudio();
+  _voices = speechSynthesis.getVoices();
+  const clip = document.getElementById("safetyFemaleYell");
+  if (!clip || !clip.src) {
+    saySafetyTTSFallback();
+    return;
+  }
+  clip.currentTime = 0;
+  const p = clip.play();
+  if (p !== undefined) {
+    p.catch(() => saySafetyTTSFallback());
+  }
+  clip.addEventListener(
+    "error",
+    () => {
+      saySafetyTTSFallback();
+    },
+    { once: true }
+  );
+}
+
 function sayTouchdown() {
   if (!window.speechSynthesis) return;
   speechSynthesis.cancel();
@@ -136,7 +343,47 @@ function sayTouchdown() {
   const voices = _voices.length ? _voices : speechSynthesis.getVoices();
   const best   = pickBestVoice(voices);
   if (best) utter.voice = best;
-  speechSynthesis.speak(utter);
+  speakUtteranceSafe(utter);
+}
+
+/**
+ * Hyped U.S. sportscaster TD — player just scored. Phrasing is rhythmic & celebratory.
+ * (TTS cannot target a specific ethnicity; OS voice choice matters most.)
+ */
+function sayAnnouncerTouchdown() {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const phrases = [
+    "Yes! Yes! He scored! Touchdown!",
+    "Let's go! Touchdown! That's what I'm talking about!",
+    "Oh come on now — he got in! Touchdown!",
+    "Woo! He scored! Touchdown! Right there!",
+    "My goodness! Touchdown! He crossed the line!",
+    "He scored! Touchdown! Let's go!",
+    "There it is! Touchdown! Oh yes!",
+    "Come on! Touchdown! He did it!",
+    "That's six! Touchdown! Beautiful!",
+    "Touchdown! You see that! He scored!",
+    "Oh yes! Touchdown! End zone!",
+    "He got in! Touchdown! Come on now!"
+  ];
+  const text = phrases[Math.floor(Math.random() * phrases.length)];
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "en-US";
+  // Fast, hyped booth energy; slightly lower pitch reads warmer on many male US voices
+  utter.rate = 1.1 + Math.random() * 0.14;
+  utter.pitch = 0.86 + Math.random() * 0.1;
+  utter.volume = 1;
+  const maleVoice = pickUSMaleAnnouncerVoice(speechSynthesis.getVoices());
+  if (maleVoice) utter.voice = maleVoice;
+  speakUtteranceSafe(utter);
+}
+
+function previewAnnouncerTouchdown() {
+  resumeAudio();
+  _voices = speechSynthesis.getVoices();
+  // Speak synchronously in the click handler — deferring to voiceschanged breaks Safari/iOS.
+  sayAnnouncerTouchdown();
 }
 
 function previewHorse() { playHorseNeigh(); }

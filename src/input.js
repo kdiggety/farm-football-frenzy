@@ -83,31 +83,44 @@ window.addEventListener("click", (e) => {
     return;
   }
   if (game.state === "playModePlaySelect") {
-    const sr = PLAY_SELECT_BUTTONS.sweepRight;
-    const sl = PLAY_SELECT_BUTTONS.sweepLeft;
-    const pr = PLAY_SELECT_BUTTONS.passRight;
-    const pl = PLAY_SELECT_BUTTONS.passLeft;
-    const dt = DEFENSE_TOGGLE_BUTTON;
+    const filt = getPlaySelectFilterBarRects();
+    if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
+      setPlayModePlayFilter(null);
+      return;
+    }
+    if (p.x >= filt.run.x && p.x <= filt.run.x + filt.run.w && p.y >= filt.run.y && p.y <= filt.run.y + filt.run.h) {
+      setPlayModePlayFilter("run");
+      return;
+    }
+    if (p.x >= filt.pass.x && p.x <= filt.pass.x + filt.pass.w && p.y >= filt.pass.y && p.y <= filt.pass.y + filt.pass.h) {
+      setPlayModePlayFilter("pass");
+      return;
+    }
+    const nav = getPlaySelectPageNavRects();
+    if (nav) {
+      if (p.x >= nav.prev.x && p.x <= nav.prev.x + nav.prev.w && p.y >= nav.prev.y && p.y <= nav.prev.y + nav.prev.h) {
+        game.playModePlaySelectPage = Math.max(0, game.playModePlaySelectPage - 1);
+        return;
+      }
+      if (p.x >= nav.next.x && p.x <= nav.next.x + nav.next.w && p.y >= nav.next.y && p.y <= nav.next.y + nav.next.h) {
+        const maxP = getPlaySelectPageCount() - 1;
+        game.playModePlaySelectPage = Math.min(maxP, game.playModePlaySelectPage + 1);
+        return;
+      }
+    }
+    const dt = getPlaySelectDefenseToggleRect();
     if (p.x >= dt.x && p.x <= dt.x + dt.w && p.y >= dt.y && p.y <= dt.y + dt.h) {
       game.selectedDefense = game.selectedDefense === "random" ? "A"
         : game.selectedDefense === "A" ? "B"
         : "random";
       previewDefensePositions();
-    } else if (p.x >= sr.x && p.x <= sr.x + sr.w && p.y >= sr.y && p.y <= sr.y + sr.h) {
-      startSweepRightPlay();
-    } else if (p.x >= sl.x && p.x <= sl.x + sl.w && p.y >= sl.y && p.y <= sl.y + sl.h) {
-      startSweepLeftPlay();
-    } else if (p.x >= pr.x && p.x <= pr.x + pr.w && p.y >= pr.y && p.y <= pr.y + pr.h) {
-      startPassRightPlay();
-    } else if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
-      startPassLeftPlay();
-    } else {
-      const dr = PLAY_SELECT_BUTTONS.diveRight;
-      const dl = PLAY_SELECT_BUTTONS.diveLeft;
-      if (p.x >= dr.x && p.x <= dr.x + dr.w && p.y >= dr.y && p.y <= dr.y + dr.h) {
-        startDiveRightPlay();
-      } else if (p.x >= dl.x && p.x <= dl.x + dl.w && p.y >= dl.y && p.y <= dl.y + dl.h) {
-        startDiveLeftPlay();
+      return;
+    }
+    const slots = getPlaySelectSlots(game.playModePlaySelectPage);
+    for (const s of slots) {
+      if (p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) {
+        startPlayFromSelect(s.key);
+        return;
       }
     }
     return;
@@ -122,16 +135,12 @@ window.addEventListener("click", (e) => {
     game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
   }
   if (game.state === "playing" && game.mode === "play"
-      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft")
+      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
       && ball.carrier === player1 && !ball.inFlight
       && game.passPlayDropbackDone && game.passPlayCanThrow) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
-    ball.targetX = tx;
-    ball.targetY = ty;
-    ball.inFlight = true;
-    ball.carrier = null;
-    game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
+    startPlayModePassThrow(tx, ty);
   }
 });
 
@@ -152,20 +161,34 @@ window.addEventListener("keydown", (e) => {
     } else {
       advancePlayModeDown(game.playModeDownedSpot);
     }
-  } else if ((key === "enter" || key === "1") && game.state === "playModePlaySelect") {
-    startSweepRightPlay();
-  } else if (key === "2" && game.state === "playModePlaySelect") {
-    startSweepLeftPlay();
-  } else if (key === "3" && game.state === "playModePlaySelect") {
-    startPassRightPlay();
-  } else if (key === "4" && game.state === "playModePlaySelect") {
-    startPassLeftPlay();
-  } else if (key === "5" && game.state === "playModePlaySelect") {
-    startDiveRightPlay();
-  } else if (key === "6" && game.state === "playModePlaySelect") {
-    startDiveLeftPlay();
+  } else if (key === "a" && game.state === "playModePlaySelect") {
+    setPlayModePlayFilter(null);
+  } else if (key === "r" && game.state === "playModePlaySelect") {
+    setPlayModePlayFilter("run");
+  } else if (key === "p" && game.state === "playModePlaySelect") {
+    setPlayModePlayFilter("pass");
+  } else if (key === "enter" && game.state === "playModePlaySelect") {
+    const slots = getPlaySelectSlots(game.playModePlaySelectPage);
+    if (slots[0]) startPlayFromSelect(slots[0].key);
+  } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
+    const slots = getPlaySelectSlots(game.playModePlaySelectPage);
+    const idx = parseInt(key, 10) - 1;
+    if (slots[idx]) startPlayFromSelect(slots[idx].key);
+  } else if ((key === "arrowleft" || key === "arrowright") && game.state === "playModePlaySelect") {
+    const pages = getPlaySelectPageCount();
+    if (pages > 1) {
+      if (key === "arrowleft") {
+        game.playModePlaySelectPage = Math.max(0, game.playModePlaySelectPage - 1);
+      } else {
+        game.playModePlaySelectPage = Math.min(pages - 1, game.playModePlaySelectPage + 1);
+      }
+      e.preventDefault();
+    }
   }
-  if (["1","2","3","4","5","6"].includes(key) && game.state === "playModePlaySelect") {
+  if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
+    e.preventDefault();
+  }
+  if ((key === "a" || key === "r" || key === "p") && game.state === "playModePlaySelect") {
     e.preventDefault();
   }
   if (key === "escape") {
@@ -205,6 +228,8 @@ function updatePlayerInput(dt) {
     game.playModePhase === "sweep" ||
     game.playModeCurrentPlay === "passRight" ||
     game.playModeCurrentPlay === "passLeft" ||
+    game.playModeCurrentPlay === "scrambledEggs" ||
+    game.playModeCurrentPlay === "barnPlay" ||
     (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
     (game.playModeCurrentPlay === "diveLeft"  && game.playModePhase === "run")
   );

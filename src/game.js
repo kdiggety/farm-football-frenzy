@@ -222,11 +222,18 @@ function startPlayModeDrive(fromX) {
   const startX = fromX !== undefined ? fromX : getLeftTwentyYardLineX();
   game.mode = "play";
   game.state = "playModePlaySelect";
+  game.playModePlayFilter = null;
+  game.playModePlaySelectPage = 0;
   game.playModeDown = 1;
   game.playModeLineX = startX;
   game.playModePhase = null;
   game.playModeCurrentPlay = null;
   positionForPlayModeAt(startX);
+}
+
+function setPlayModePlayFilter(filter) {
+  game.playModePlayFilter = filter;
+  game.playModePlaySelectPage = 0;
 }
 
 function advancePlayModeDown(newLineX) {
@@ -248,6 +255,7 @@ function advancePlayModeDown(newLineX) {
   game.playModePhase = null;
   game.playModeCurrentPlay = null;
   positionForPlayModeAt(newLineX);
+  game.playModePlaySelectPage = 0;
   game.state = "playModePlaySelect";
 }
 
@@ -327,6 +335,7 @@ function positionForPassRight() {
   game.reacquireCooldownP2 = 0;
   game.passPlayDropbackDone   = false;
   game.passPlayCanThrow       = true;
+  game.passPlayTargetReceiver = null;
   game.passPlayDropbackTarget = Math.max(lineX - 10 * YARDS_TO_PIXELS, FIELD.x + FIELD.endZoneWidth + player1.radius + 4);
   game.rushReactionTimer      = 500;
 }
@@ -356,6 +365,7 @@ function positionForPassLeft() {
   game.reacquireCooldownP2 = 0;
   game.passPlayDropbackDone   = false;
   game.passPlayCanThrow       = true;
+  game.passPlayTargetReceiver = null;
   game.passPlayDropbackTarget = Math.max(lineX - 10 * YARDS_TO_PIXELS, FIELD.x + FIELD.endZoneWidth + player1.radius + 4);
   game.rushReactionTimer      = 500;
 }
@@ -365,6 +375,70 @@ function startPassLeftPlay() {
   game.playModePhase = null;
   game.state = "playing";
   positionForPassLeft();
+}
+
+function positionForBarnPlay() {
+  const midY = FIELD.y + FIELD.height / 2;
+  const lineX = game.playModeLineX;
+  const spacingY = 10 * YARDS_TO_PIXELS;
+  const bottomY = FIELD.y + FIELD.height - 55;
+  player1.x = lineX;
+  player1.y = midY;
+  allyHorse.x = lineX + 20;
+  allyHorse.y = bottomY;
+  lilTunnelPete.x = lineX + 20;
+  lilTunnelPete.y = bottomY - spacingY;
+  ball.carrier = player1;
+  ball.inFlight = false;
+  updateBallPosition();
+  positionDefenseForPlay(lilTunnelPete.y);
+  game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
+  game.passPlayDropbackDone   = false;
+  game.passPlayCanThrow       = true;
+  game.passPlayTargetReceiver = null;
+  game.passPlayDropbackTarget = Math.max(lineX - 10 * YARDS_TO_PIXELS, FIELD.x + FIELD.endZoneWidth + player1.radius + 4);
+  game.rushReactionTimer      = 500;
+}
+
+function startBarnPlay() {
+  game.playModeCurrentPlay = "barnPlay";
+  game.playModePhase = null;
+  game.state = "playing";
+  positionForBarnPlay();
+}
+
+function positionForScrambledEggs() {
+  const midY = FIELD.y + FIELD.height / 2;
+  const lineX = game.playModeLineX;
+  const spacingY = 10 * YARDS_TO_PIXELS;
+  const bottomY = FIELD.y + FIELD.height - 55;
+  player1.x = lineX;
+  player1.y = midY;
+  allyHorse.x = lineX + 20;
+  allyHorse.y = bottomY;
+  lilTunnelPete.x = lineX + 20;
+  lilTunnelPete.y = bottomY - spacingY;
+  ball.carrier = player1;
+  ball.inFlight = false;
+  updateBallPosition();
+  positionDefenseForPlay(lilTunnelPete.y);
+  game.possessionLockTimer = 0;
+  game.reacquireCooldownP1 = 0;
+  game.reacquireCooldownP2 = 0;
+  game.passPlayDropbackDone   = false;
+  game.passPlayCanThrow       = true;
+  game.passPlayTargetReceiver = null;
+  game.passPlayDropbackTarget = Math.max(lineX - 10 * YARDS_TO_PIXELS, FIELD.x + FIELD.endZoneWidth + player1.radius + 4);
+  game.rushReactionTimer      = 500;
+}
+
+function startScrambledEggsPlay() {
+  game.playModeCurrentPlay = "scrambledEggs";
+  game.playModePhase = null;
+  game.state = "playing";
+  positionForScrambledEggs();
 }
 
 function positionForDiveRight() {
@@ -589,6 +663,38 @@ function startDiveLeftPlay() {
   game.playModePhase = "handoff";
   game.state = "playing";
   positionForDiveLeft();
+}
+
+/** Dispatch from horizontal play-select UI (filtered run/pass list, 4 per page). */
+function startPlayFromSelect(playKey) {
+  switch (playKey) {
+    case "sweepRight":
+      startSweepRightPlay();
+      break;
+    case "sweepLeft":
+      startSweepLeftPlay();
+      break;
+    case "passRight":
+      startPassRightPlay();
+      break;
+    case "passLeft":
+      startPassLeftPlay();
+      break;
+    case "barnPlay":
+      startBarnPlay();
+      break;
+    case "scrambledEggs":
+      startScrambledEggsPlay();
+      break;
+    case "diveRight":
+      startDiveRightPlay();
+      break;
+    case "diveLeft":
+      startDiveLeftPlay();
+      break;
+    default:
+      break;
+  }
 }
 
 function updatePlayModeDiveLeft(dt) {
@@ -932,6 +1038,7 @@ function setPlayDowned(downedX, { tackle = false, incomplete = false, sack = fal
   game.playModeIncomplete = incomplete;
   game.playModePhase      = null;
   game.playModeCurrentPlay = null;
+  game.passPlayTargetReceiver = null;
 }
 
 function updatePlayMode(dt) {
@@ -949,6 +1056,14 @@ function updatePlayMode(dt) {
   }
   if (game.playModeCurrentPlay === "passLeft") {
     updatePlayModePassLeft(dt);
+    return;
+  }
+  if (game.playModeCurrentPlay === "barnPlay") {
+    updatePlayModeBarnPlay(dt);
+    return;
+  }
+  if (game.playModeCurrentPlay === "scrambledEggs") {
+    updatePlayModeScrambledEggs(dt);
     return;
   }
   if (game.playModeCurrentPlay === "diveRight") {
@@ -1240,8 +1355,10 @@ function movePassDefenders(dt, ballRef) {
     clampPlayerToField(covering);
     clampPlayerToField(rushing);
     clampPlayerToField(cluckNorris);
-    lilTunnelPete.x += lilTunnelPete.speed * dt;
-    clampPlayerToField(lilTunnelPete);
+    if (game.playModeCurrentPlay !== "barnPlay" && game.playModeCurrentPlay !== "scrambledEggs") {
+      lilTunnelPete.x += lilTunnelPete.speed * dt;
+      clampPlayerToField(lilTunnelPete);
+    }
     return;
   }
 
@@ -1298,10 +1415,95 @@ function movePassDefenders(dt, ballRef) {
 
   // Pete runs his flat route only while QB still has the ball;
   // when the ball is in flight the caller moves him toward the target instead
-  if (!ballRef.inFlight) {
+  if (!ballRef.inFlight && game.playModeCurrentPlay !== "barnPlay" && game.playModeCurrentPlay !== "scrambledEggs") {
     lilTunnelPete.x += lilTunnelPete.speed * dt;
     clampPlayerToField(lilTunnelPete);
   }
+}
+
+function moveBarnPlayReceivers(dt, adjustTarget = null) {
+  const horseStemX = Math.min(game.playModeLineX + 22 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 30);
+  const peteStemX = Math.min(game.playModeLineX + 12 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 50);
+  const horseTargetX = Math.min(game.playModeLineX + 38 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 10);
+  const peteTargetX = peteStemX;
+  const horseTargetY = FIELD.y + FIELD.height * 0.42;
+  const peteTargetY = FIELD.y + FIELD.height * 0.28;
+
+  if (adjustTarget === "horse") {
+    moveToward(allyHorse, ball.targetX, ball.targetY, allyHorse.speed, dt);
+  } else if (allyHorse.x < horseStemX) {
+    moveToward(allyHorse, horseStemX, allyHorse.y, allyHorse.speed, dt);
+  } else {
+    moveToward(allyHorse, horseTargetX, horseTargetY, allyHorse.speed, dt);
+  }
+
+  if (adjustTarget === "pete") {
+    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
+  } else if (lilTunnelPete.x < peteStemX) {
+    moveToward(lilTunnelPete, peteStemX, lilTunnelPete.y, lilTunnelPete.speed, dt);
+  } else {
+    moveToward(lilTunnelPete, peteTargetX, peteTargetY, lilTunnelPete.speed, dt);
+  }
+
+  clampPlayerToField(allyHorse);
+  clampPlayerToField(lilTunnelPete);
+}
+
+function moveScrambledEggsReceivers(dt, adjustTarget = null) {
+  const zStemX = Math.min(game.playModeLineX + 35 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 22);
+  const zTargetX = Math.min(game.playModeLineX + 47 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 8);
+  const zTargetY = FIELD.y + FIELD.height - 34;
+  const xStemX = Math.min(game.playModeLineX + 27 * YARDS_TO_PIXELS, FIELD.x + FIELD.width - FIELD.endZoneWidth - 42);
+  const xTargetX = Math.max(game.playModeLineX + 25 * YARDS_TO_PIXELS, FIELD.x + FIELD.endZoneWidth + 24);
+
+  if (adjustTarget === "horse") {
+    moveToward(allyHorse, ball.targetX, ball.targetY, allyHorse.speed, dt);
+  } else if (allyHorse.x < xStemX) {
+    moveToward(allyHorse, xStemX, allyHorse.y, allyHorse.speed, dt);
+  } else {
+    moveToward(allyHorse, xTargetX, allyHorse.y, allyHorse.speed, dt);
+  }
+
+  if (adjustTarget === "pete") {
+    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
+  } else if (lilTunnelPete.x < zStemX) {
+    moveToward(lilTunnelPete, zStemX, lilTunnelPete.y, lilTunnelPete.speed, dt);
+  } else {
+    moveToward(lilTunnelPete, zTargetX, zTargetY, lilTunnelPete.speed, dt);
+  }
+
+  clampPlayerToField(allyHorse);
+  clampPlayerToField(lilTunnelPete);
+}
+
+function startPlayModePassThrow(tx, ty) {
+  ball.targetX = tx;
+  ball.targetY = ty;
+  ball.inFlight = true;
+  ball.carrier = null;
+  game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
+
+  const horseDist = distance(tx, ty, allyHorse.x, allyHorse.y);
+  const peteDist = distance(tx, ty, lilTunnelPete.x, lilTunnelPete.y);
+  game.passPlayTargetReceiver = horseDist <= peteDist ? "horse" : "pete";
+}
+
+function moveStandardPassReceiversInFlight(dt) {
+  const target = game.passPlayTargetReceiver;
+
+  if (target === "horse") {
+    moveToward(allyHorse, ball.targetX, ball.targetY, allyHorse.speed, dt);
+    lilTunnelPete.x += lilTunnelPete.speed * dt;
+  } else if (target === "pete") {
+    allyHorse.x += allyHorse.speed * dt;
+    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
+  } else {
+    moveToward(allyHorse, ball.targetX, ball.targetY, allyHorse.speed, dt);
+    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
+  }
+
+  clampPlayerToField(allyHorse);
+  clampPlayerToField(lilTunnelPete);
 }
 
 function updatePlayModePassRight(dt) {
@@ -1358,11 +1560,7 @@ function updatePlayModePassRight(dt) {
   }
 
   if (ball.inFlight) {
-    // Both receivers run toward where the ball is going to land
-    moveToward(allyHorse,    ball.targetX, ball.targetY, allyHorse.speed,    dt);
-    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
-    clampPlayerToField(allyHorse);
-    clampPlayerToField(lilTunnelPete);
+    moveStandardPassReceiversInFlight(dt);
     const dx = ball.targetX - ball.x;
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
@@ -1494,11 +1692,7 @@ function updatePlayModePassLeft(dt) {
   }
 
   if (ball.inFlight) {
-    // Both receivers run toward where the ball is going to land
-    moveToward(allyHorse,    ball.targetX, ball.targetY, allyHorse.speed,    dt);
-    moveToward(lilTunnelPete, ball.targetX, ball.targetY, lilTunnelPete.speed, dt);
-    clampPlayerToField(allyHorse);
-    clampPlayerToField(lilTunnelPete);
+    moveStandardPassReceiversInFlight(dt);
     const dx = ball.targetX - ball.x;
     const dy = ball.targetY - ball.y;
     const dist = Math.hypot(dx, dy);
@@ -1553,6 +1747,260 @@ function updatePlayModePassLeft(dt) {
     updatePlayerInput(dt);
     moveToward(player2,     lilTunnelPete.x, lilTunnelPete.y, player2.speed,     dt);
     moveToward(allyDonkey,  lilTunnelPete.x, lilTunnelPete.y, allyDonkey.speed,  dt);
+    moveToward(cluckNorris, lilTunnelPete.x, lilTunnelPete.y, cluckNorris.speed, dt);
+    clampPlayerToField(player2);
+    clampPlayerToField(allyDonkey);
+    clampPlayerToField(cluckNorris);
+    updateBallPosition();
+    if (lilTunnelPete.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(lilTunnelPete);
+      return;
+    }
+    if (circleTackle(lilTunnelPete, player2) || circleTackle(lilTunnelPete, allyDonkey) || circleTackle(lilTunnelPete, cluckNorris)) {
+      setPlayDowned(lilTunnelPete.x, { tackle: true });
+      return;
+    }
+    return;
+  }
+
+  updateBallPosition();
+}
+
+function updatePlayModeBarnPlay(dt) {
+  const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
+  const { rushing } = getPassDefenders();
+
+  if (ball.carrier === player1 && !ball.inFlight) {
+    if (!game.passPlayDropbackDone) {
+      if (player1.x > game.passPlayDropbackTarget) {
+        player1.x = Math.max(player1.x - player1.speed * dt, game.passPlayDropbackTarget);
+      } else {
+        game.passPlayDropbackDone = true;
+      }
+      clampPlayerToField(player1);
+    } else {
+      updatePlayerInput(dt);
+      clampPlayerToField(player1);
+      if (player1.x >= game.playModeLineX) {
+        game.passPlayCanThrow = false;
+      }
+    }
+
+    if (game.passPlayCanThrow) {
+      if (circleTackle(player1, rushing) || circleTackle(player1, cluckNorris)) {
+        setPlayDowned(player1.x, { tackle: true, sack: true });
+        updateBallPosition();
+        return;
+      }
+    } else {
+      if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
+        setPlayDowned(player1.x, { tackle: true });
+        updateBallPosition();
+        return;
+      }
+      if (player1.x >= rightEndZoneLeft) {
+        player1.score += 1;
+        game.state = "touchdownPopup";
+        game.touchdownPopupTimer = 4000;
+        game.afterTouchdownAction = "startPlayModeDrive";
+        playTouchdownAudio(player1);
+        return;
+      }
+    }
+
+    moveBarnPlayReceivers(dt);
+    movePassDefenders(dt, ball);
+    updateBallPosition();
+    return;
+  }
+
+  if (ball.inFlight) {
+    moveBarnPlayReceivers(dt, game.passPlayTargetReceiver);
+    const dx = ball.targetX - ball.x;
+    const dy = ball.targetY - ball.y;
+    const dist = Math.hypot(dx, dy);
+    const move = CONFIG.passSpeed * dt;
+    if (circleTouch(allyHorse, ball)) {
+      ball.inFlight = false;
+      ball.carrier = allyHorse;
+      updateBallPosition();
+    } else if (circleTouch(lilTunnelPete, ball)) {
+      ball.inFlight = false;
+      ball.carrier = lilTunnelPete;
+      updateBallPosition();
+    } else if (dist <= move || dist < 8) {
+      ball.x = ball.targetX;
+      ball.y = ball.targetY;
+      ball.inFlight = false;
+      ball.carrier = null;
+      setPlayDowned(game.playModeLineX, { incomplete: true });
+    } else {
+      ball.x += (dx / dist) * move;
+      ball.y += (dy / dist) * move;
+    }
+    movePassDefenders(dt, ball);
+    return;
+  }
+
+  if (ball.carrier === allyHorse) {
+    updatePlayerInput(dt);
+    moveToward(player2, allyHorse.x, allyHorse.y, player2.speed, dt);
+    moveToward(allyDonkey, allyHorse.x, allyHorse.y, allyDonkey.speed, dt);
+    moveToward(cluckNorris, allyHorse.x, allyHorse.y, cluckNorris.speed, dt);
+    clampPlayerToField(player2);
+    clampPlayerToField(allyDonkey);
+    clampPlayerToField(cluckNorris);
+    updateBallPosition();
+    if (allyHorse.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(allyHorse);
+      return;
+    }
+    if (circleTackle(allyHorse, player2) || circleTackle(allyHorse, allyDonkey) || circleTackle(allyHorse, cluckNorris)) {
+      setPlayDowned(allyHorse.x, { tackle: true });
+      return;
+    }
+    return;
+  }
+
+  if (ball.carrier === lilTunnelPete) {
+    updatePlayerInput(dt);
+    moveToward(player2, lilTunnelPete.x, lilTunnelPete.y, player2.speed, dt);
+    moveToward(allyDonkey, lilTunnelPete.x, lilTunnelPete.y, allyDonkey.speed, dt);
+    moveToward(cluckNorris, lilTunnelPete.x, lilTunnelPete.y, cluckNorris.speed, dt);
+    clampPlayerToField(player2);
+    clampPlayerToField(allyDonkey);
+    clampPlayerToField(cluckNorris);
+    updateBallPosition();
+    if (lilTunnelPete.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(lilTunnelPete);
+      return;
+    }
+    if (circleTackle(lilTunnelPete, player2) || circleTackle(lilTunnelPete, allyDonkey) || circleTackle(lilTunnelPete, cluckNorris)) {
+      setPlayDowned(lilTunnelPete.x, { tackle: true });
+      return;
+    }
+    return;
+  }
+
+  updateBallPosition();
+}
+
+function updatePlayModeScrambledEggs(dt) {
+  const rightEndZoneLeft = FIELD.x + FIELD.width - FIELD.endZoneWidth;
+  const { rushing } = getPassDefenders();
+
+  if (ball.carrier === player1 && !ball.inFlight) {
+    if (!game.passPlayDropbackDone) {
+      if (player1.x > game.passPlayDropbackTarget) {
+        player1.x = Math.max(player1.x - player1.speed * dt, game.passPlayDropbackTarget);
+      } else {
+        game.passPlayDropbackDone = true;
+      }
+      clampPlayerToField(player1);
+    } else {
+      updatePlayerInput(dt);
+      clampPlayerToField(player1);
+      if (player1.x >= game.playModeLineX) {
+        game.passPlayCanThrow = false;
+      }
+    }
+
+    if (game.passPlayCanThrow) {
+      if (circleTackle(player1, rushing) || circleTackle(player1, cluckNorris)) {
+        setPlayDowned(player1.x, { tackle: true, sack: true });
+        updateBallPosition();
+        return;
+      }
+    } else {
+      if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
+        setPlayDowned(player1.x, { tackle: true });
+        updateBallPosition();
+        return;
+      }
+      if (player1.x >= rightEndZoneLeft) {
+        player1.score += 1;
+        game.state = "touchdownPopup";
+        game.touchdownPopupTimer = 4000;
+        game.afterTouchdownAction = "startPlayModeDrive";
+        playTouchdownAudio(player1);
+        return;
+      }
+    }
+
+    moveScrambledEggsReceivers(dt);
+    movePassDefenders(dt, ball);
+    updateBallPosition();
+    return;
+  }
+
+  if (ball.inFlight) {
+    moveScrambledEggsReceivers(dt, game.passPlayTargetReceiver);
+    const dx = ball.targetX - ball.x;
+    const dy = ball.targetY - ball.y;
+    const dist = Math.hypot(dx, dy);
+    const move = CONFIG.passSpeed * dt;
+    if (circleTouch(allyHorse, ball)) {
+      ball.inFlight = false;
+      ball.carrier = allyHorse;
+      updateBallPosition();
+    } else if (circleTouch(lilTunnelPete, ball)) {
+      ball.inFlight = false;
+      ball.carrier = lilTunnelPete;
+      updateBallPosition();
+    } else if (dist <= move || dist < 8) {
+      ball.x = ball.targetX;
+      ball.y = ball.targetY;
+      ball.inFlight = false;
+      ball.carrier = null;
+      setPlayDowned(game.playModeLineX, { incomplete: true });
+    } else {
+      ball.x += (dx / dist) * move;
+      ball.y += (dy / dist) * move;
+    }
+    movePassDefenders(dt, ball);
+    return;
+  }
+
+  if (ball.carrier === allyHorse) {
+    updatePlayerInput(dt);
+    moveToward(player2, allyHorse.x, allyHorse.y, player2.speed, dt);
+    moveToward(allyDonkey, allyHorse.x, allyHorse.y, allyDonkey.speed, dt);
+    moveToward(cluckNorris, allyHorse.x, allyHorse.y, cluckNorris.speed, dt);
+    clampPlayerToField(player2);
+    clampPlayerToField(allyDonkey);
+    clampPlayerToField(cluckNorris);
+    updateBallPosition();
+    if (allyHorse.x >= rightEndZoneLeft) {
+      player1.score += 1;
+      game.state = "touchdownPopup";
+      game.touchdownPopupTimer = 4000;
+      game.afterTouchdownAction = "startPlayModeDrive";
+      playTouchdownAudio(allyHorse);
+      return;
+    }
+    if (circleTackle(allyHorse, player2) || circleTackle(allyHorse, allyDonkey) || circleTackle(allyHorse, cluckNorris)) {
+      setPlayDowned(allyHorse.x, { tackle: true });
+      return;
+    }
+    return;
+  }
+
+  if (ball.carrier === lilTunnelPete) {
+    updatePlayerInput(dt);
+    moveToward(player2, lilTunnelPete.x, lilTunnelPete.y, player2.speed, dt);
+    moveToward(allyDonkey, lilTunnelPete.x, lilTunnelPete.y, allyDonkey.speed, dt);
     moveToward(cluckNorris, lilTunnelPete.x, lilTunnelPete.y, cluckNorris.speed, dt);
     clampPlayerToField(player2);
     clampPlayerToField(allyDonkey);

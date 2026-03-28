@@ -29,19 +29,8 @@ gameMusic.volume = 0.45;
 
 let _gameMusicState = null;
 
-function shouldPlayGameMusic() {
-  if (typeof game === "undefined") return false;
-  if (game.mode !== "game" && game.mode !== "passing" && game.mode !== "play") return false;
-  if (game.state === "menu") return false;
-  return true;
-}
-
-// Replay when the track ends (loop attr would block "ended", so we handle it here)
-gameMusic.addEventListener("ended", () => {
-  if (_gameMusicState !== "playing" || !shouldPlayGameMusic()) return;
-  gameMusic.currentTime = 0;
-  gameMusic.play().catch(() => {});
-});
+// Looping uses the element's `loop` attribute (see index.html) so the decoder can
+// restart without the gap that a manual `ended` → currentTime=0 → play() causes.
 
 function startGameMusic() {
   stopMenuMusic();

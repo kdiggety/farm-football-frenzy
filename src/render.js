@@ -400,6 +400,8 @@ function buildPlayResultText() {
     sweepLeft:  "Sweep Left",
     passRight:  "Pass Right",
     passLeft:   "Pass Left",
+    barnPlay:   "Barn Play",
+    scrambledEggs: "Scrambled Eggs",
     diveRight:  "Stretch Right",
     diveLeft:   "Stretch Left"
   };
@@ -919,6 +921,46 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
     ctx.beginPath(); ctx.moveTo(losX - 8, midY); ctx.lineTo(dRight, dTop + 2); ctx.stroke();
     ctx.setLineDash([]);
 
+  } else if (play === "barnPlay") {
+    // Matches the approved Barn Play image: X on a deeper post, Z breaking upfield
+    const lowY = dBot - 6;
+    const highY = lowY - Math.round(sq * 0.26);
+    const horseStemX = dLeft + Math.round(sq * 0.72);
+    const peteStemX = dLeft + Math.round(sq * 0.52);
+    dot(losX - 8, midY, QB, 4);
+    arrow(losX - 8, midY, dLeft + 2, midY, QB);
+    dot(losX + 2, lowY, HORSE, 3);
+    arrow(losX + 2, lowY, horseStemX, lowY, HORSE);
+    arrow(horseStemX, lowY, dRight - 8, midY + Math.round(sq * 0.03), HORSE);
+    dot(losX + 2, highY, PETE, 3);
+    arrow(losX + 2, highY, peteStemX, highY, PETE);
+    arrow(peteStemX, highY, peteStemX, dTop + Math.round(sq * 0.18), PETE);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(losX - 8, midY); ctx.lineTo(dRight - 12, midY); ctx.stroke();
+    ctx.setLineDash([]);
+
+  } else if (play === "scrambledEggs") {
+    // Match the live route: Z corners down-right, X curls straight back
+    const lowY = dBot - 6;
+    const highY = lowY - Math.round(sq * 0.26);
+    const zStemX = dLeft + Math.round(sq * 0.92);
+    const xStemX = dLeft + Math.round(sq * 0.67);
+    dot(losX - 8, midY, QB, 4);
+    arrow(losX - 8, midY, dLeft + 2, midY, QB);
+    dot(losX + 2, highY, PETE, 3);
+    arrow(losX + 2, highY, zStemX, highY, PETE);
+    arrow(zStemX, highY, dRight - 10, dBot - 16, PETE);
+    dot(losX + 2, lowY, HORSE, 3);
+    arrow(losX + 2, lowY, xStemX, lowY, HORSE);
+    arrow(xStemX, lowY, dLeft + Math.round(sq * 0.60), lowY, HORSE);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(losX - 8, midY); ctx.lineTo(dRight - 12, midY); ctx.stroke();
+    ctx.setLineDash([]);
+
   } else if (play === "diveRight") {
     // Pete arcs down; horse follows for handoff — all pre-snap motion behind LOS
     dot(losX - 3, midY, QB, 4);
@@ -945,76 +987,164 @@ function drawPlaySelectOverlay() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
-  ctx.fillRect(230, 140, 500, 399);
+  const P = PLAY_SELECT_PANEL;
+  ctx.fillStyle = "rgba(17, 24, 39, 0.84)";
+  ctx.fillRect(P.x, P.y, P.w, P.h);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(230, 140, 500, 399);
+  ctx.strokeRect(P.x, P.y, P.w, P.h);
+
+  const filt = getPlaySelectFilterBarRects();
+  const cur = game.playModePlayFilter;
+  const divY = getPlaySelectDividerY();
+  const offenseTop = P.y + PLAY_SELECT_TITLE_Y - 18;
+  const offenseBottom = divY - 12;
+  const defenseTop = divY + 10;
+  const defenseBottom = P.y + P.h - 12;
+
+  ctx.fillStyle = "rgba(55, 65, 81, 0.32)";
+  ctx.fillRect(P.x + 12, offenseTop, P.w - 24, offenseBottom - offenseTop);
+  ctx.fillStyle = "rgba(30, 41, 59, 0.42)";
+  ctx.fillRect(P.x + 12, defenseTop, P.w - 24, defenseBottom - defenseTop);
 
   ctx.textAlign = "center";
+  ctx.font = "bold 12px Arial";
+  const filterLabels = { all: "All", run: "Run only", pass: "Pass only" };
+  for (const key of ["all", "run", "pass"]) {
+    const rect = filt[key];
+    const active =
+      (key === "all" && cur === null) ||
+      (key === "run" && cur === "run") ||
+      (key === "pass" && cur === "pass");
+    ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.fillText(filterLabels[key], rect.x + rect.w / 2, rect.y + rect.h / 2 + 4);
+  }
+
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 24px Arial";
-  ctx.fillText("Select play", canvas.width / 2, 183);
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Select play", canvas.width / 2, P.y + PLAY_SELECT_TITLE_Y);
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Down " + game.playModeDown + " of " + game.playModeMaxDowns, canvas.width / 2, 200);
+  ctx.fillText(
+    "Down " + game.playModeDown + " of " + game.playModeMaxDowns,
+    canvas.width / 2,
+    P.y + PLAY_SELECT_DOWN_Y
+  );
 
-  const sr = PLAY_SELECT_BUTTONS.sweepRight;
-  const sl = PLAY_SELECT_BUTTONS.sweepLeft;
-  const pr = PLAY_SELECT_BUTTONS.passRight;
-  const pl = PLAY_SELECT_BUTTONS.passLeft;
-  const dr = PLAY_SELECT_BUTTONS.diveRight;
-  const dl = PLAY_SELECT_BUTTONS.diveLeft;
+  const page = game.playModePlaySelectPage;
+  const slots = getPlaySelectSlots(page);
+  const pages = getPlaySelectPageCount();
+
   ctx.fillStyle = "#374151";
-  ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
-  ctx.fillRect(sl.x, sl.y, sl.w, sl.h);
-  ctx.fillRect(pr.x, pr.y, pr.w, pr.h);
-  ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
-  ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
-  ctx.fillRect(dl.x, dl.y, dl.w, dl.h);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
-  ctx.strokeRect(sl.x, sl.y, sl.w, sl.h);
-  ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
-  ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
-  ctx.strokeRect(dr.x, dr.y, dr.w, dr.h);
-  ctx.strokeRect(dl.x, dl.y, dl.w, dl.h);
-  ctx.fillStyle = COLORS.white;
   ctx.font = "bold 14px Arial";
-  // Text sits near the top of each button; diagram fills the lower portion
-  ctx.fillText("Sweep Right",   sr.x + sr.w / 2, sr.y + 15);
-  ctx.fillText("Sweep Left",    sl.x + sl.w / 2, sl.y + 15);
-  ctx.fillText("Pass Right",    pr.x + pr.w / 2, pr.y + 15);
-  ctx.fillText("Pass Left",     pl.x + pl.w / 2, pl.y + 15);
-  ctx.fillText("Stretch Right", dr.x + dr.w / 2, dr.y + 15);
-  ctx.fillText("Stretch Left",  dl.x + dl.w / 2, dl.y + 15);
+  for (const s of slots) {
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.fillText(PLAY_SELECT_LABELS[s.key] || s.key, s.x + s.w / 2, s.y + 15);
+    ctx.fillStyle = "#374151";
+  }
 
-  // Play diagrams
-  drawPlayDiagram("sweepRight", sr.x, sr.y, sr.w, sr.h);
-  drawPlayDiagram("sweepLeft",  sl.x, sl.y, sl.w, sl.h);
-  drawPlayDiagram("passRight",  pr.x, pr.y, pr.w, pr.h);
-  drawPlayDiagram("passLeft",   pl.x, pl.y, pl.w, pl.h);
-  drawPlayDiagram("diveRight",  dr.x, dr.y, dr.w, dr.h);
-  drawPlayDiagram("diveLeft",   dl.x, dl.y, dl.w, dl.h);
+  for (const s of slots) {
+    drawPlayDiagram(s.key, s.x, s.y, s.w, s.h);
+    if (cur === null) {
+      const category = getPlayCategory(s.key);
+      const badgeW = 46;
+      const badgeH = 16;
+      const bx = s.x + s.w - badgeW - 8;
+      const by = s.y + 8;
+      ctx.fillStyle = category === "run" ? "#065f46" : "#1d4ed8";
+      ctx.fillRect(bx, by, badgeW, badgeH);
+      ctx.strokeStyle = COLORS.white;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, badgeW, badgeH);
+      ctx.fillStyle = COLORS.white;
+      ctx.font = "bold 10px Arial";
+      ctx.fillText(category === "run" ? "RUN" : "PASS", bx + badgeW / 2, by + 11);
+      ctx.fillStyle = "#374151";
+      ctx.strokeStyle = COLORS.white;
+      ctx.lineWidth = 3;
+      ctx.font = "bold 14px Arial";
+    }
+  }
 
-  // Divider
+  const mx = game.mouseX;
+  const my = game.mouseY;
+  for (const key of ["all", "run", "pass"]) {
+    const r = filt[key];
+    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+      ctx.save();
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+      ctx.restore();
+      break;
+    }
+  }
+  for (const s of slots) {
+    if (mx >= s.x && mx <= s.x + s.w && my >= s.y && my <= s.y + s.h) {
+      ctx.save();
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 4;
+      ctx.setLineDash([]);
+      const pad = 3;
+      ctx.strokeRect(s.x - pad, s.y - pad, s.w + pad * 2, s.h + pad * 2);
+      ctx.restore();
+      break;
+    }
+  }
+
+  // Page navigation (up to 4 plays per page)
+  const nav = getPlaySelectPageNavRects();
+  ctx.textAlign = "center";
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#9ca3af";
+  if (pages > 1 && nav) {
+    ctx.fillStyle = "#374151";
+    ctx.fillRect(nav.prev.x, nav.prev.y, nav.prev.w, nav.prev.h);
+    ctx.fillRect(nav.next.x, nav.next.y, nav.next.w, nav.next.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(nav.prev.x, nav.prev.y, nav.prev.w, nav.prev.h);
+    ctx.strokeRect(nav.next.x, nav.next.y, nav.next.w, nav.next.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 14px Arial";
+    ctx.fillText("◀", nav.prev.x + nav.prev.w / 2, nav.prev.y + nav.prev.h / 2 + 5);
+    ctx.fillText("▶", nav.next.x + nav.next.w / 2, nav.next.y + nav.next.h / 2 + 5);
+    ctx.font = "12px Arial";
+    ctx.fillStyle = "#d1d5db";
+    if (pages === 2) {
+      ctx.fillText(page === 0 ? "●  ○" : "○  ●", canvas.width / 2, nav.prev.y + nav.prev.h + 16);
+    } else {
+      ctx.fillText(
+        "Page " + (page + 1) + " / " + pages,
+        canvas.width / 2,
+        nav.prev.y + nav.prev.h + 16
+      );
+    }
+  }
+
   ctx.strokeStyle = "#4b5563";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  ctx.moveTo(260, 479);
-  ctx.lineTo(700, 479);
+  ctx.moveTo(P.x + 24, divY);
+  ctx.lineTo(P.x + P.w - 24, divY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Defense label
   ctx.font = "13px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("Defense", canvas.width / 2, 487);
+  ctx.fillText("Defense", canvas.width / 2, divY + 18);
 
-  // Defense toggle button
-  const dt = DEFENSE_TOGGLE_BUTTON;
+  const dt = getPlaySelectDefenseToggleRect();
   const defColor = game.selectedDefense === "A"
     ? "#dc2626"
     : game.selectedDefense === "B"
@@ -1034,10 +1164,6 @@ function drawPlaySelectOverlay() {
     : "Defense: Random";
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 
-  // Hint
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "#9ca3af";
-  ctx.fillText("click to cycle", canvas.width / 2, dt.y + dt.h + 14);
 }
 
 function render() {
@@ -1084,7 +1210,7 @@ function render() {
   }
 
   const showPassAim = (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
-    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft")
+    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
       && ball.carrier === player1 && !ball.inFlight
       && game.passPlayDropbackDone && game.passPlayCanThrow);
   if (showPassAim) {
