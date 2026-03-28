@@ -1340,7 +1340,7 @@ function drawPlaySelectOverlay() {
 function drawMobileTouchControls() {
   if (!game.touchControlsEnabled || game.state === "menu" || game.state === "pauseMenu") return;
 
-  if (game.state === "playing") {
+  if (game.state === "playing" || game.state === "prePlayCadence") {
     const stick = getMobileJoystickRect();
     const knobX = game.touchStickActive ? game.touchStickKnobX : stick.cx;
     const knobY = game.touchStickActive ? game.touchStickKnobY : stick.cy;
