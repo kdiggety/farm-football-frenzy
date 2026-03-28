@@ -192,6 +192,8 @@ function handleCanvasTap(p) {
     if (p.x >= dt.x && p.x <= dt.x + dt.w && p.y >= dt.y && p.y <= dt.y + dt.h) {
       game.selectedDefense = game.selectedDefense === "random" ? "A"
         : game.selectedDefense === "A" ? "B"
+        : game.selectedDefense === "B" ? "C"
+        : game.selectedDefense === "C" ? "D"
         : "random";
       previewDefensePositions();
       return;
@@ -206,19 +208,27 @@ function handleCanvasTap(p) {
     return;
   }
   if (game.state === "defenseModeSelect") {
+    const filt = getDefenseSelectFilterBarRects();
     const options = getDefenseSelectOptionRects();
     const offenseToggle = getDefenseSelectOffenseToggleRect();
-    if (p.x >= options.A.x && p.x <= options.A.x + options.A.w && p.y >= options.A.y && p.y <= options.A.y + options.A.h) {
-      beginSelectedDefense("A");
+    if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
+      game.defenseModeDefenseFilter = null;
       return;
     }
-    if (p.x >= options.B.x && p.x <= options.B.x + options.B.w && p.y >= options.B.y && p.y <= options.B.y + options.B.h) {
-      beginSelectedDefense("B");
+    if (p.x >= filt.run.x && p.x <= filt.run.x + filt.run.w && p.y >= filt.run.y && p.y <= filt.run.y + filt.run.h) {
+      game.defenseModeDefenseFilter = "run";
       return;
     }
-    if (p.x >= options.random.x && p.x <= options.random.x + options.random.w && p.y >= options.random.y && p.y <= options.random.y + options.random.h) {
-      beginSelectedDefense("random");
+    if (p.x >= filt.pass.x && p.x <= filt.pass.x + filt.pass.w && p.y >= filt.pass.y && p.y <= filt.pass.y + filt.pass.h) {
+      game.defenseModeDefenseFilter = "pass";
       return;
+    }
+    for (const key of Object.keys(options)) {
+      const rect = options[key];
+      if (p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h) {
+        beginSelectedDefense(key);
+        return;
+      }
     }
     if (p.x >= offenseToggle.x && p.x <= offenseToggle.x + offenseToggle.w && p.y >= offenseToggle.y && p.y <= offenseToggle.y + offenseToggle.h) {
       cycleDefenseModeOffensePlay();

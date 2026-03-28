@@ -76,25 +76,57 @@ function getPlaySelectFilterBarRects() {
 
 function getDefenseSelectOptionRects() {
   const P = DEFENSE_SELECT_PANEL;
-  const gap = 22;
+  const order = getFilteredDefenseOptionOrder();
+  const gap = 18;
   const pad = 24;
-  const bw = (P.w - pad * 2 - gap * 2) / 3;
-  const by = P.y + 92;
-  return {
-    A: { x: P.x + pad, y: by, w: bw, h: 160 },
-    B: { x: P.x + pad + bw + gap, y: by, w: bw, h: 160 },
-    random: { x: P.x + pad + (bw + gap) * 2, y: by, w: bw, h: 160 }
-  };
+  const bw = (P.w - pad * 2 - gap * Math.max(0, order.length - 1)) / Math.max(1, order.length);
+  const by = P.y + 126;
+  const totalW = order.length * bw + Math.max(0, order.length - 1) * gap;
+  const startX = P.x + Math.round((P.w - totalW) / 2);
+  const rects = {};
+  for (let i = 0; i < order.length; i++) {
+    rects[order[i]] = {
+      x: startX + i * (bw + gap),
+      y: by,
+      w: bw,
+      h: 160
+    };
+  }
+  return rects;
 }
 
 function getDefenseSelectOffenseToggleRect() {
   const P = DEFENSE_SELECT_PANEL;
   return {
     x: P.x + 170,
-    y: P.y + 292,
+    y: P.y + 306,
     w: P.w - 340,
     h: 52
   };
+}
+
+function getDefenseSelectFilterBarRects() {
+  const P = DEFENSE_SELECT_PANEL;
+  const gap = 10;
+  const y = P.y + 14;
+  const h = 34;
+  const x0 = P.x + 24;
+  const inner = P.w - 48;
+  const bw = (inner - gap * 2) / 3;
+  return {
+    all: { x: x0, y, w: bw, h },
+    run: { x: x0 + bw + gap, y, w: bw, h },
+    pass: { x: x0 + (bw + gap) * 2, y, w: bw, h }
+  };
+}
+
+function getFilteredDefenseOptionOrder() {
+  const run = ["A", "C"];
+  const pass = ["B", "D"];
+  const all = ["A", "B", "C", "D", "random"];
+  if (game.defenseModeDefenseFilter === "run") return run;
+  if (game.defenseModeDefenseFilter === "pass") return pass;
+  return all;
 }
 
 function getPlayCategory(playKey) {
@@ -268,12 +300,13 @@ const game = {
   cluckNorrisTimer: 0,           // ms remaining before Cluck Norris starts pursuing
   peteBlockTimer: 0,             // ms remaining on Pete's current block (max 500)
   peteBlockTargetId: null,       // id of the defender Pete is currently blocking
-  selectedDefense: "random",     // "A" | "B" | "random" — player's chosen defensive scheme
+  selectedDefense: "random",     // "A" | "B" | "C" | "D" | "random" — player's chosen defensive scheme
   passDefDeepTarget: null,       // "horse" | "pete" — which receiver Cluck Norris is assigned (Defense B)
   playModePlaySelectPage: 0,     // horizontal play picker page index
   playModePlayFilter: null,     // null = all plays | "run" | "pass"
   prePlayCadenceIndex: 0,
   prePlayCadenceTimer: 0,
+  defenseModeDefenseFilter: null, // null = all | "run" | "pass"
   defenseModeControlledPlayerId: "player2",
   defenseModeCpuPlay: null,
   defenseModeSelectedOffensePlay: "random",

@@ -1052,6 +1052,14 @@ function drawDefensePreviewDiagram(defenseKey, bx, by, bw, bh) {
     dot(deepX, topY, 6, "#f472b6");
     dot(deepX, botY, 6, "#86efac");
     dot(closeX, midDefY, 6, "#fca5a5");
+  } else if (defenseKey === "C") {
+    dot(closeX, topY, 6, "#f472b6");
+    dot(closeX, botY, 6, "#86efac");
+    dot(closeX, midDefY, 6, "#fca5a5");
+  } else if (defenseKey === "D") {
+    dot(deepX, topY, 6, "#f472b6");
+    dot(deepX, botY, 6, "#86efac");
+    dot(deepX, midDefY, 6, "#fca5a5");
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.font = "bold 76px Arial";
@@ -1067,6 +1075,7 @@ function drawDefenseSelectOverlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const P = DEFENSE_SELECT_PANEL;
+  const filt = getDefenseSelectFilterBarRects();
   const options = getDefenseSelectOptionRects();
   ctx.fillStyle = "rgba(17, 24, 39, 0.86)";
   ctx.fillRect(P.x, P.y, P.w, P.h);
@@ -1077,19 +1086,42 @@ function drawDefenseSelectOverlay() {
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 24px Arial";
-  ctx.fillText("Select defense", canvas.width / 2, P.y + 34);
+  const cur = game.defenseModeDefenseFilter;
+  ctx.font = "bold 12px Arial";
+  const filterLabels = { all: "All", run: "Run only", pass: "Pass only" };
+  for (const key of ["all", "run", "pass"]) {
+    const rect = filt[key];
+    const active =
+      (key === "all" && cur === null) ||
+      (key === "run" && cur === "run") ||
+      (key === "pass" && cur === "pass");
+    ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.fillText(filterLabels[key], rect.x + rect.w / 2, rect.y + rect.h / 2 + 4);
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 24px Arial";
+  ctx.fillText("Select defense", canvas.width / 2, P.y + 68);
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText(`Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, P.y + 58);
-  ctx.fillText("Choose defense up top and toggle the offense play below.", canvas.width / 2, P.y + 78);
+  ctx.fillText(`Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, P.y + 92);
+  ctx.fillText("Choose defense up top and toggle the offense play below.", canvas.width / 2, P.y + 112);
 
   const labels = {
     A: { title: "Run Defense", sub: "Two defenders up front" },
     B: { title: "Pass Defense", sub: "Two defenders deeper" },
+    C: { title: "De-fence", sub: "Big Coop walks up too" },
+    D: { title: "Prevent", sub: "De-fence, 15 yards deeper" },
     random: { title: "Random", sub: "" }
   };
 
-  for (const key of ["A", "B", "random"]) {
+  for (const key of getFilteredDefenseOptionOrder()) {
     const rect = options[key];
     const active = game.selectedDefense === key;
     ctx.fillStyle = active ? "rgba(29, 78, 216, 0.55)" : "rgba(55, 65, 81, 0.9)";
@@ -1320,6 +1352,10 @@ function drawPlaySelectOverlay() {
     ? "#dc2626"
     : game.selectedDefense === "B"
     ? "#1d4ed8"
+    : game.selectedDefense === "C"
+    ? "#7c3aed"
+    : game.selectedDefense === "D"
+    ? "#0f766e"
     : "#374151";
   ctx.fillStyle = defColor;
   ctx.fillRect(dt.x, dt.y, dt.w, dt.h);
@@ -1332,6 +1368,10 @@ function drawPlaySelectOverlay() {
     ? "Run Defense"
     : game.selectedDefense === "B"
     ? "Pass Defense"
+    : game.selectedDefense === "C"
+    ? "De-fence"
+    : game.selectedDefense === "D"
+    ? "Prevent"
     : "?";
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 

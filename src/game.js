@@ -141,14 +141,36 @@ function positionDefenseB(qbX, qbY) {
   cluckNorris.y = FIELD.y + FIELD.height * 0.5;
 }
 
+function positionDefenseC(qbX, qbY) {
+  // De-fence: same front as Run Defense, but Big Coop walks up to the line too
+  const closeX = qbX + 5 * YARDS_TO_PIXELS;
+  player2.x = closeX;
+  player2.y = FIELD.y + FIELD.height * 0.2;
+  allyDonkey.x = closeX;
+  allyDonkey.y = FIELD.y + FIELD.height * 0.8;
+  cluckNorris.x = closeX;
+  cluckNorris.y = FIELD.y + FIELD.height * 0.5;
+}
+
+function positionDefenseD(qbX, qbY) {
+  // Prevent: same shell as De-fence, but everyone starts 15 yards deeper
+  const deepX = qbX + 20 * YARDS_TO_PIXELS;
+  player2.x = deepX;
+  player2.y = FIELD.y + FIELD.height * 0.2;
+  allyDonkey.x = deepX;
+  allyDonkey.y = FIELD.y + FIELD.height * 0.8;
+  cluckNorris.x = deepX;
+  cluckNorris.y = FIELD.y + FIELD.height * 0.5;
+}
+
 // Returns {covering, rushing} defender references for pass plays
 function getPassDefenders() {
-  if (game.playModeDefense === "B") {
+  if (game.playModeDefense === "B" || game.playModeDefense === "D") {
     const covering = game.passDefCovering === "pig" ? player2 : allyDonkey;
     const rushing  = game.passDefRushing  === "pig" ? player2 : allyDonkey;
     return { covering, rushing };
   }
-  // Defense A: Pig rushes, Hee Haw covers (with reaction delay handled at call site)
+  // Defenses A/C: Pig rushes, Hee Haw covers (with reaction delay handled at call site)
   return { covering: allyDonkey, rushing: player2 };
 }
 
@@ -157,22 +179,27 @@ function positionDefenseForPlay(wrY) {
   game.passDefRushing = null;
   game.passDefDeepTarget = null;
   game.defenseReactionTimer = 0;
-  const useDefenseA = game.selectedDefense === "A"
-    ? true
-    : game.selectedDefense === "B"
-    ? false
-    : Math.random() < 0.5;
-  if (useDefenseA) {
+  let defenseChoice = game.selectedDefense;
+  if (defenseChoice === "random") {
+    const choices = ["A", "B", "C", "D"];
+    defenseChoice = choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  if (defenseChoice === "A") {
     game.playModeDefense = "A";
     positionDefenseA(player1.x, player1.y);
     // Pass play: 550ms coverage delay for Hee Haw; run play: 500ms delay for both defenders
     game.defenseReactionTimer = (wrY !== undefined) ? 550 : 500;
     game.cluckNorrisTimer = (wrY !== undefined) ? 1000 : 750;
-  } else {
-    game.playModeDefense = "B";
-    positionDefenseB(player1.x, player1.y);
+  } else if (defenseChoice === "B" || defenseChoice === "D") {
+    game.playModeDefense = defenseChoice;
+    if (defenseChoice === "B") {
+      positionDefenseB(player1.x, player1.y);
+    } else {
+      positionDefenseD(player1.x, player1.y);
+    }
     game.cluckNorrisTimer = (wrY !== undefined) ? 1000 : 750;
-    // Defense B on pass plays: randomly assign all three defenders
+    // Pass-focused defenses B/D: randomly assign all three defenders
     if (wrY !== undefined) {
       // Cluck Norris randomly picks one receiver to shadow
       game.passDefDeepTarget = Math.random() < 0.5 ? "horse" : "pete";
@@ -185,6 +212,11 @@ function positionDefenseForPlay(wrY) {
         game.passDefRushing  = "pig";
       }
     }
+  } else {
+    game.playModeDefense = "C";
+    positionDefenseC(player1.x, player1.y);
+    game.defenseReactionTimer = (wrY !== undefined) ? 550 : 500;
+    game.cluckNorrisTimer = (wrY !== undefined) ? 650 : 400;
   }
 }
 
@@ -199,12 +231,15 @@ function getLeftTwentyYardLineX() {
 function previewDefensePositions() {
   if (game.selectedDefense === "A") {
     positionDefenseA(player1.x, player1.y);
-  } else   if (game.selectedDefense === "B") {
+  } else if (game.selectedDefense === "B") {
     positionDefenseB(player1.x, player1.y);
+  } else if (game.selectedDefense === "C") {
+    positionDefenseC(player1.x, player1.y);
+  } else if (game.selectedDefense === "D") {
+    positionDefenseD(player1.x, player1.y);
   } else {
-    // Random — flip a coin for the preview
-    if (Math.random() < 0.5) positionDefenseA(player1.x, player1.y);
-    else positionDefenseB(player1.x, player1.y);
+    const choices = [positionDefenseA, positionDefenseB, positionDefenseC, positionDefenseD];
+    choices[Math.floor(Math.random() * choices.length)](player1.x, player1.y);
   }
 }
 
@@ -386,6 +421,7 @@ function startDefenseModeDrive(fromX) {
   game.defenseModeControlledPlayerId = "player2";
   game.defenseModeCpuPlay = null;
   game.defenseModeSelectedOffensePlay = "random";
+  game.defenseModeDefenseFilter = null;
   positionForPlayModeAt(startX);
 }
 
