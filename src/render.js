@@ -386,11 +386,12 @@ function drawScoreboard() {
   ctx.fillStyle = "#f9a8d4";
   ctx.fillText(`Professor Pig: ${player2.score}`, canvas.width - 24, 36);
 
-  if (game.mode === "play") {
+  if (game.mode === "play" || game.mode === "defense") {
     ctx.textAlign = "center";
     ctx.fillStyle = "#e5e7eb";
     ctx.font = "14px Arial";
-    ctx.fillText(`Play Mode: Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, 54);
+    const modeLabel = game.mode === "defense" ? "Defense Mode" : "Play Mode";
+    ctx.fillText(`${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, 54);
   }
 }
 
@@ -416,9 +417,13 @@ function buildPlayResultText() {
   return { text: `${label} — No gain`, color: "#fbbf24" };
 }
 
-function drawCenterMessage(title, subtitle, detail) {
+function drawCenterMessage(title, subtitle, detail, buttonText = null) {
   const hasDetail = !!detail;
-  const boxH = hasDetail ? 185 : 150;
+  const hasSubtitle = !!subtitle;
+  const hasButton = !!buttonText;
+  const boxH = hasDetail
+    ? (hasButton ? 220 : 185)
+    : (hasButton ? 185 : 150);
   const boxY = Math.round((canvas.height - boxH) / 2) - 10;
 
   ctx.fillStyle = "rgba(17, 24, 39, 0.88)";
@@ -433,14 +438,31 @@ function drawCenterMessage(title, subtitle, detail) {
   ctx.font = "bold 34px Arial";
   ctx.fillText(title, canvas.width / 2, boxY + 52);
 
-  ctx.font = "18px Arial";
-  ctx.fillStyle = COLORS.white;
-  ctx.fillText(subtitle, canvas.width / 2, boxY + 90);
+  if (hasSubtitle) {
+    ctx.font = "18px Arial";
+    ctx.fillStyle = COLORS.white;
+    ctx.fillText(subtitle, canvas.width / 2, boxY + 90);
+  }
 
   if (hasDetail) {
     ctx.font = "bold 22px Arial";
     ctx.fillStyle = detail.color;
-    ctx.fillText(detail.text, canvas.width / 2, boxY + 138);
+    ctx.fillText(detail.text, canvas.width / 2, boxY + (hasSubtitle ? 138 : 102));
+  }
+
+  if (hasButton) {
+    const bw = 140;
+    const bh = 42;
+    const bx = canvas.width / 2 - bw / 2;
+    const by = boxY + boxH - 58;
+    ctx.fillStyle = "#374151";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 20px Arial";
+    ctx.fillText(buttonText, canvas.width / 2, by + bh / 2 + 7);
   }
 }
 
@@ -731,36 +753,31 @@ function drawMenu() {
   ctx.fillText("Farm Football Frenzy", canvas.width / 2, 160);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Choose a mode", canvas.width / 2, 210);
+  ctx.fillText("Choose offense or defense", canvas.width / 2, 210);
 
-  const g = MENU_BUTTONS.gameMode;
-  const pm = MENU_BUTTONS.passingMode;
   const pl = MENU_BUTTONS.playMode;
-
-  ctx.fillStyle = "#374151";
-  ctx.fillRect(g.x, g.y, g.w, g.h);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(g.x, g.y, g.w, g.h);
-  ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 16px Arial";
-  ctx.fillText("Game Mode", g.x + g.w / 2, g.y + g.h / 2 + 6);
-
-  ctx.fillStyle = "#374151";
-  ctx.fillRect(pm.x, pm.y, pm.w, pm.h);
-  ctx.strokeRect(pm.x, pm.y, pm.w, pm.h);
-  ctx.fillStyle = COLORS.white;
-  ctx.fillText("Passing Mode", pm.x + pm.w / 2, pm.y + pm.h / 2 + 6);
+  const def = MENU_BUTTONS.defenseMode;
 
   ctx.fillStyle = "#374151";
   ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
   ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Play Mode", pl.x + pl.w / 2, pl.y + pl.h / 2 + 6);
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("Play", pl.x + pl.w / 2, pl.y + pl.h / 2 + 7);
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(def.x, def.y, def.w, def.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(def.x, def.y, def.w, def.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Defense", def.x + def.w / 2, def.y + def.h / 2 + 7);
 
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("Game: Run with the ball. Passing: Click to throw. Play: 4 downs from the red 20-yard line.", canvas.width / 2, 470);
+  ctx.fillText("4 downs from the red 20-yard line.", canvas.width / 2, 470);
 }
 
 function drawPauseMenu() {
@@ -779,8 +796,9 @@ function drawPauseMenu() {
   ctx.fillText("Press ESC again to resume", canvas.width / 2, 265);
 
   const res = PAUSE_MENU_BUTTONS.resume;
-  const playBtn = PAUSE_MENU_BUTTONS.playMode;
+  const modeBtn = PAUSE_MENU_BUTTONS.modeRestart;
   const home = PAUSE_MENU_BUTTONS.home;
+  const modeLabel = game.mode === "defense" ? "New Defense Game" : "New Play Game";
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(res.x, res.y, res.w, res.h);
@@ -792,10 +810,10 @@ function drawPauseMenu() {
   ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
-  ctx.fillRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
-  ctx.strokeRect(playBtn.x, playBtn.y, playBtn.w, playBtn.h);
+  ctx.fillRect(modeBtn.x, modeBtn.y, modeBtn.w, modeBtn.h);
+  ctx.strokeRect(modeBtn.x, modeBtn.y, modeBtn.w, modeBtn.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Play Mode", playBtn.x + playBtn.w / 2, playBtn.y + playBtn.h / 2 + 8);
+  ctx.fillText(modeLabel, modeBtn.x + modeBtn.w / 2, modeBtn.y + modeBtn.h / 2 + 8);
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(home.x, home.y, home.w, home.h);
@@ -983,6 +1001,159 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
   ctx.restore();
 }
 
+function drawDefensePreviewDiagram(defenseKey, bx, by, bw, bh) {
+  const pad = 18;
+  const left = bx + pad;
+  const top = by + 40;
+  const width = bw - pad * 2;
+  const height = bh - 64;
+  const losX = left + Math.round(width * 0.35);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(47,125,50,0.32)";
+  ctx.fillRect(left, top, width, height);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(left, top, width, height);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(losX, top);
+  ctx.lineTo(losX, top + height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const qbX = left + Math.round(width * 0.2);
+  const midY = top + height / 2;
+  const closeX = left + Math.round(width * 0.55);
+  const deepX = left + Math.round(width * 0.78);
+  const topY = top + Math.round(height * 0.22);
+  const botY = top + Math.round(height * 0.78);
+  const midDefY = top + Math.round(height * 0.5);
+
+  function dot(x, y, r, fill) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  dot(qbX, midY, 5, "#60a5fa");
+
+  if (defenseKey === "A") {
+    dot(closeX, topY, 6, "#f472b6");
+    dot(closeX, botY, 6, "#86efac");
+    dot(deepX, midDefY, 6, "#fca5a5");
+  } else if (defenseKey === "B") {
+    dot(deepX, topY, 6, "#f472b6");
+    dot(deepX, botY, 6, "#86efac");
+    dot(closeX, midDefY, 6, "#fca5a5");
+  } else {
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "bold 76px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("?", left + width / 2, top + height / 2 + 24);
+  }
+
+  ctx.restore();
+}
+
+function drawDefenseSelectOverlay() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const P = DEFENSE_SELECT_PANEL;
+  const options = getDefenseSelectOptionRects();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.86)";
+  ctx.fillRect(P.x, P.y, P.w, P.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(P.x, P.y, P.w, P.h);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 24px Arial";
+  ctx.fillText("Select defense", canvas.width / 2, P.y + 34);
+  ctx.font = "14px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText(`Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, P.y + 58);
+  ctx.fillText("Choose defense up top and toggle the offense play below.", canvas.width / 2, P.y + 78);
+
+  const labels = {
+    A: { title: "Run Defense", sub: "Two defenders up front" },
+    B: { title: "Pass Defense", sub: "Two defenders deeper" },
+    random: { title: "Random", sub: "" }
+  };
+
+  for (const key of ["A", "B", "random"]) {
+    const rect = options[key];
+    const active = game.selectedDefense === key;
+    ctx.fillStyle = active ? "rgba(29, 78, 216, 0.55)" : "rgba(55, 65, 81, 0.9)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(labels[key].title, rect.x + rect.w / 2, rect.y + 26);
+    ctx.font = "12px Arial";
+    ctx.fillStyle = "#d1d5db";
+    ctx.fillText(labels[key].sub, rect.x + rect.w / 2, rect.y + rect.h - 16);
+    drawDefensePreviewDiagram(key, rect.x, rect.y, rect.w, rect.h);
+  }
+
+  const offenseRect = getDefenseSelectOffenseToggleRect();
+  const offenseLabel = game.defenseModeSelectedOffensePlay === "random"
+    ? "Random"
+    : (PLAY_SELECT_LABELS[game.defenseModeSelectedOffensePlay] || "Random");
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "13px Arial";
+  ctx.fillText("Offense play", canvas.width / 2, offenseRect.y - 12);
+  ctx.fillStyle = "rgba(55, 65, 81, 0.92)";
+  ctx.fillRect(offenseRect.x, offenseRect.y, offenseRect.w, offenseRect.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(offenseRect.x, offenseRect.y, offenseRect.w, offenseRect.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 18px Arial";
+  ctx.fillText(offenseLabel, offenseRect.x + offenseRect.w / 2, offenseRect.y + offenseRect.h / 2 + 6);
+}
+
+function drawControlledDefenderMarker() {
+  if (game.mode !== "defense" || game.state === "menu" || game.state === "pauseMenu") return;
+  const defender = getDefenseControlledPlayer();
+  ctx.save();
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.arc(defender.x, defender.y, defender.radius + 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawPrePlayCadenceOverlay() {
+  const words = ["Ready", "Set", "Hut"];
+  const word = words[game.prePlayCadenceIndex] || "Ready";
+
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.24)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fef3c7";
+  ctx.font = "bold 68px Arial";
+  ctx.fillText(word, canvas.width / 2, canvas.height / 2 + 22);
+  ctx.strokeStyle = "rgba(17, 24, 39, 0.72)";
+  ctx.lineWidth = 5;
+  ctx.strokeText(word, canvas.width / 2, canvas.height / 2 + 22);
+  ctx.restore();
+}
+
 function drawPlaySelectOverlay() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1161,9 +1332,81 @@ function drawPlaySelectOverlay() {
     ? "Run Defense"
     : game.selectedDefense === "B"
     ? "Pass Defense"
-    : "Defense: Random";
+    : "?";
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 
+}
+
+function drawMobileTouchControls() {
+  if (!game.touchControlsEnabled || game.state === "menu" || game.state === "pauseMenu") return;
+
+  if (game.state === "playing") {
+    const stick = getMobileJoystickRect();
+    const knobX = game.touchStickActive ? game.touchStickKnobX : stick.cx;
+    const knobY = game.touchStickActive ? game.touchStickKnobY : stick.cy;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(17, 24, 39, 0.42)";
+    ctx.beginPath();
+    ctx.arc(stick.cx, stick.cy, stick.outerR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(147, 197, 253, 0.82)";
+    ctx.beginPath();
+    ctx.arc(knobX, knobY, stick.innerR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(game.state)) {
+    const pause = getMobilePauseButtonRect();
+    ctx.save();
+    ctx.fillStyle = "rgba(17, 24, 39, 0.72)";
+    ctx.fillRect(pause.x, pause.y, pause.w, pause.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pause.x, pause.y, pause.w, pause.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.fillRect(pause.x + 17, pause.y + 8, 7, pause.h - 16);
+    ctx.fillRect(pause.x + pause.w - 24, pause.y + 8, 7, pause.h - 16);
+    ctx.restore();
+  }
+
+  if (["playing", "prePlayCadence"].includes(game.state) && game.mode === "defense") {
+    const sw = getMobileSwitchButtonRect();
+    ctx.save();
+    ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+    ctx.fillRect(sw.x, sw.y, sw.w, sw.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sw.x, sw.y, sw.w, sw.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Switch", sw.x + sw.w / 2, sw.y + sw.h / 2 + 6);
+    ctx.restore();
+  }
+
+  if (game.state === "gameOver") {
+    const restart = getMobileRestartButtonRect();
+    ctx.save();
+    ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+    ctx.fillRect(restart.x, restart.y, restart.w, restart.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(restart.x, restart.y, restart.w, restart.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 18px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Restart", restart.x + restart.w / 2, restart.y + restart.h / 2 + 6);
+    ctx.restore();
+  }
 }
 
 function render() {
@@ -1177,7 +1420,7 @@ function render() {
   drawField();
 
   // Line of scrimmage indicator for play mode
-  if (game.mode === "play" && game.playModeLineX) {
+  if ((game.mode === "play" || game.mode === "defense") && game.playModeLineX) {
     ctx.save();
     ctx.strokeStyle = "#facc15";
     ctx.lineWidth = 3;
@@ -1197,15 +1440,30 @@ function render() {
   drawPlayer(allyDonkey,   "Deputy Hee-Haw",  "#bbf7d0");
   drawPlayer(cluckNorris,  "Big Coop",        "#fca5a5");
   drawPlayer(lilTunnelPete,"Lil' Tunnel Pete","#fef08a");
+  drawControlledDefenderMarker();
   drawBall();
 
   if (game.state === "pauseMenu") {
     drawPauseMenu();
+    drawMobileTouchControls();
     return;
   }
 
   if (game.state === "playModePlaySelect") {
     drawPlaySelectOverlay();
+    drawMobileTouchControls();
+    return;
+  }
+
+  if (game.state === "defenseModeSelect") {
+    drawDefenseSelectOverlay();
+    drawMobileTouchControls();
+    return;
+  }
+
+  if (game.state === "prePlayCadence") {
+    drawPrePlayCadenceOverlay();
+    drawMobileTouchControls();
     return;
   }
 
@@ -1213,7 +1471,7 @@ function render() {
     (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
       && ball.carrier === player1 && !ball.inFlight
       && game.passPlayDropbackDone && game.passPlayCanThrow);
-  if (showPassAim) {
+  if (showPassAim && !game.touchControlsEnabled) {
     ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
@@ -1242,8 +1500,15 @@ function render() {
   } else if (game.state === "playModeDowned") {
     const isFourthDown = game.playModeDown >= game.playModeMaxDowns;
     const downedTitle  = game.playModeIncomplete ? "Incomplete!" : "Down!";
-    const detail       = game.mode === "play" ? buildPlayResultText() : null;
-    drawCenterMessage(downedTitle, isFourthDown ? "Press Enter to continue" : "Press Enter for next play", detail);
+    const detail       = (game.mode === "play" || game.mode === "defense") ? buildPlayResultText() : null;
+    if (game.touchControlsEnabled) {
+      drawCenterMessage(downedTitle, "", detail, "Tap");
+    } else {
+      const downPrompt = game.mode === "defense"
+        ? (isFourthDown ? "Press Enter to finish the drive" : "Press Enter for next defense")
+        : (isFourthDown ? "Press Enter to continue" : "Press Enter for next play");
+      drawCenterMessage(downedTitle, downPrompt, detail);
+    }
   } else if (game.state === "gameOver") {
     if (game.mode === "play" && !game.winner) {
       drawCenterMessage("Game Over", "Press R for new drive");
@@ -1252,5 +1517,7 @@ function render() {
       drawCenterMessage(winText, "Press R to restart");
     }
   }
+
+  drawMobileTouchControls();
 }
 

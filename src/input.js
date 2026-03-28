@@ -1,6 +1,11 @@
 // =========================================================
 // Input Handling
 // =========================================================
+game.touchControlsEnabled = ("ontouchstart" in window) || window.matchMedia("(pointer: coarse)").matches;
+
+let joystickTouchId = null;
+let suppressClickUntil = 0;
+
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -11,49 +16,104 @@ function getCanvasCoords(e) {
   };
 }
 
-window.addEventListener("mousemove", (e) => {
-  const p = getCanvasCoords(e);
+function isPauseableState(state) {
+  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(state);
+}
+
+function togglePauseMenu() {
+  if (game.state === "pauseMenu") {
+    game.state = game.stateBeforePauseMenu;
+    game.stateBeforePauseMenu = null;
+  } else if (isPauseableState(game.state)) {
+    game.stateBeforePauseMenu = game.state;
+    game.state = "pauseMenu";
+  }
+}
+
+function resetTouchStick() {
+  const stick = getMobileJoystickRect();
+  game.touchMoveX = 0;
+  game.touchMoveY = 0;
+  game.touchStickActive = false;
+  game.touchStickKnobX = stick.cx;
+  game.touchStickKnobY = stick.cy;
+}
+
+function updateTouchStickFromPoint(p) {
+  const stick = getMobileJoystickRect();
+  const dx = p.x - stick.cx;
+  const dy = p.y - stick.cy;
+  const len = Math.hypot(dx, dy);
+  const max = stick.outerR;
+  const scale = len > max ? max / len : 1;
+  const knobX = stick.cx + dx * scale;
+  const knobY = stick.cy + dy * scale;
+  game.touchStickActive = true;
+  game.touchStickKnobX = knobX;
+  game.touchStickKnobY = knobY;
+  game.touchMoveX = (knobX - stick.cx) / max;
+  game.touchMoveY = (knobY - stick.cy) / max;
+}
+
+function isThrowReady() {
+  return game.state === "playing" && (
+    (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
+    (game.mode === "play"
+      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
+      && ball.carrier === player1 && !ball.inFlight
+      && game.passPlayDropbackDone && game.passPlayCanThrow)
+  );
+}
+
+function shouldStartTouchStick(p) {
+  if (!game.touchControlsEnabled || game.state !== "playing") return false;
+  const stick = getMobileJoystickRect();
+  const inStickZone = Math.hypot(p.x - stick.cx, p.y - stick.cy) <= stick.hitR;
+  const inLeftLowerHalf = p.x <= canvas.width * 0.45 && p.y >= canvas.height * 0.45;
+  if (!isThrowReady()) return inStickZone || inLeftLowerHalf;
+  return inStickZone || (inLeftLowerHalf && p.x < canvas.width * 0.5);
+}
+
+function handleCanvasTap(p) {
   game.mouseX = p.x;
   game.mouseY = p.y;
-});
 
-window.addEventListener("click", (e) => {
-  const p = getCanvasCoords(e);
+  if (game.touchControlsEnabled && game.state !== "pauseMenu" && isPauseableState(game.state)) {
+    const pause = getMobilePauseButtonRect();
+    if (p.x >= pause.x && p.x <= pause.x + pause.w && p.y >= pause.y && p.y <= pause.y + pause.h) {
+      togglePauseMenu();
+      return;
+    }
+  }
+
   if (game.state === "menu") {
-    const g = MENU_BUTTONS.gameMode;
-    const pm = MENU_BUTTONS.passingMode;
     const pl = MENU_BUTTONS.playMode;
-    if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) {
-      startGameMusic();
-      game.mode = "game";
-      game.state = "playing";
-      resetPositions();
-      return;
-    }
-    if (p.x >= pm.x && p.x <= pm.x + pm.w && p.y >= pm.y && p.y <= pm.y + pm.h) {
-      startGameMusic();
-      game.mode = "passing";
-      game.state = "playing";
-      resetPositions();
-      return;
-    }
+    const def = MENU_BUTTONS.defenseMode;
     if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
       startPlayMode();
+      return;
+    }
+    if (p.x >= def.x && p.x <= def.x + def.w && p.y >= def.y && p.y <= def.y + def.h) {
+      startDefenseMode();
       return;
     }
     return;
   }
   if (game.state === "pauseMenu") {
     const res = PAUSE_MENU_BUTTONS.resume;
-    const playBtn = PAUSE_MENU_BUTTONS.playMode;
+    const modeBtn = PAUSE_MENU_BUTTONS.modeRestart;
     const home = PAUSE_MENU_BUTTONS.home;
     if (p.x >= res.x && p.x <= res.x + res.w && p.y >= res.y && p.y <= res.y + res.h) {
       game.state = game.stateBeforePauseMenu;
       game.stateBeforePauseMenu = null;
       return;
     }
-    if (p.x >= playBtn.x && p.x <= playBtn.x + playBtn.w && p.y >= playBtn.y && p.y <= playBtn.y + playBtn.h) {
-      startPlayMode();
+    if (p.x >= modeBtn.x && p.x <= modeBtn.x + modeBtn.w && p.y >= modeBtn.y && p.y <= modeBtn.y + modeBtn.h) {
+      if (game.mode === "defense") {
+        startDefenseMode();
+      } else {
+        startPlayMode();
+      }
       game.stateBeforePauseMenu = null;
       return;
     }
@@ -71,15 +131,35 @@ window.addEventListener("click", (e) => {
     return;
   }
   if (game.state === "playModeDowned") {
-    if (game.playModeDown >= game.playModeMaxDowns) {
-      game.state = "gameOver";
-      game.winner = null;
+    if (game.mode === "defense") {
+      advanceDefenseModeDown(game.playModeDownedSpot);
     } else {
-      advancePlayModeDown(game.playModeDownedSpot);
+      if (game.playModeDown >= game.playModeMaxDowns) {
+        game.state = "gameOver";
+        game.winner = null;
+      } else {
+        advancePlayModeDown(game.playModeDownedSpot);
+      }
     }
     return;
   }
   if (game.state === "touchdownPopup" || game.state === "safetyPopup") {
+    return;
+  }
+  if (game.state === "gameOver") {
+    if (game.touchControlsEnabled) {
+      const restart = getMobileRestartButtonRect();
+      if (p.x >= restart.x && p.x <= restart.x + restart.w && p.y >= restart.y && p.y <= restart.y + restart.h) {
+        if (game.mode === "play") {
+          startPlayModeDrive();
+        } else if (game.mode === "defense") {
+          startDefenseMode();
+        } else {
+          restartGame();
+        }
+        return;
+      }
+    }
     return;
   }
   if (game.state === "playModePlaySelect") {
@@ -119,11 +199,38 @@ window.addEventListener("click", (e) => {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
     for (const s of slots) {
       if (p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) {
-        startPlayFromSelect(s.key);
+        beginSelectedPlay(s.key);
         return;
       }
     }
     return;
+  }
+  if (game.state === "defenseModeSelect") {
+    const options = getDefenseSelectOptionRects();
+    const offenseToggle = getDefenseSelectOffenseToggleRect();
+    if (p.x >= options.A.x && p.x <= options.A.x + options.A.w && p.y >= options.A.y && p.y <= options.A.y + options.A.h) {
+      beginSelectedDefense("A");
+      return;
+    }
+    if (p.x >= options.B.x && p.x <= options.B.x + options.B.w && p.y >= options.B.y && p.y <= options.B.y + options.B.h) {
+      beginSelectedDefense("B");
+      return;
+    }
+    if (p.x >= options.random.x && p.x <= options.random.x + options.random.w && p.y >= options.random.y && p.y <= options.random.y + options.random.h) {
+      beginSelectedDefense("random");
+      return;
+    }
+    if (p.x >= offenseToggle.x && p.x <= offenseToggle.x + offenseToggle.w && p.y >= offenseToggle.y && p.y <= offenseToggle.y + offenseToggle.h) {
+      cycleDefenseModeOffensePlay();
+      return;
+    }
+  }
+  if (game.touchControlsEnabled && ["playing", "prePlayCadence"].includes(game.state) && game.mode === "defense") {
+    const sw = getMobileSwitchButtonRect();
+    if (p.x >= sw.x && p.x <= sw.x + sw.w && p.y >= sw.y && p.y <= sw.y + sw.h) {
+      cycleDefenseControlledPlayer();
+      return;
+    }
   }
   if (game.state === "playing" && game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
@@ -142,7 +249,61 @@ window.addEventListener("click", (e) => {
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
     startPlayModePassThrow(tx, ty);
   }
+}
+
+window.addEventListener("mousemove", (e) => {
+  const p = getCanvasCoords(e);
+  game.mouseX = p.x;
+  game.mouseY = p.y;
 });
+
+window.addEventListener("click", (e) => {
+  if (Date.now() < suppressClickUntil) return;
+  handleCanvasTap(getCanvasCoords(e));
+});
+
+canvas.addEventListener("touchstart", (e) => {
+  game.touchControlsEnabled = true;
+  suppressClickUntil = Date.now() + 800;
+  for (const t of e.changedTouches) {
+    const p = getCanvasCoords(t);
+    if (joystickTouchId === null && shouldStartTouchStick(p)) {
+      joystickTouchId = t.identifier;
+      updateTouchStickFromPoint(p);
+    } else {
+      handleCanvasTap(p);
+    }
+  }
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  game.touchControlsEnabled = true;
+  suppressClickUntil = Date.now() + 800;
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouchId) {
+      const p = getCanvasCoords(t);
+      game.mouseX = p.x;
+      game.mouseY = p.y;
+      updateTouchStickFromPoint(p);
+    }
+  }
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+
+function handleTouchEnd(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouchId) {
+      joystickTouchId = null;
+      resetTouchStick();
+      break;
+    }
+  }
+  if (e.cancelable) e.preventDefault();
+}
+
+canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+canvas.addEventListener("touchcancel", handleTouchEnd, { passive: false });
 
 window.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
@@ -151,16 +312,24 @@ window.addEventListener("keydown", (e) => {
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
       startPlayModeDrive();
+    } else if (game.mode === "defense") {
+      startDefenseMode();
     } else {
       restartGame();
     }
   } else if ((key === "enter" || key === " ") && game.state === "playModeDowned") {
-    if (game.playModeDown >= game.playModeMaxDowns) {
-      game.state = "gameOver";
-      game.winner = null;
+    if (game.mode === "defense") {
+      advanceDefenseModeDown(game.playModeDownedSpot);
     } else {
-      advancePlayModeDown(game.playModeDownedSpot);
+      if (game.playModeDown >= game.playModeMaxDowns) {
+        game.state = "gameOver";
+        game.winner = null;
+      } else {
+        advancePlayModeDown(game.playModeDownedSpot);
+      }
     }
+  } else if (key === " " && game.mode === "defense" && ["playing", "prePlayCadence"].includes(game.state)) {
+    cycleDefenseControlledPlayer();
   } else if (key === "a" && game.state === "playModePlaySelect") {
     setPlayModePlayFilter(null);
   } else if (key === "r" && game.state === "playModePlaySelect") {
@@ -169,11 +338,11 @@ window.addEventListener("keydown", (e) => {
     setPlayModePlayFilter("pass");
   } else if (key === "enter" && game.state === "playModePlaySelect") {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
-    if (slots[0]) startPlayFromSelect(slots[0].key);
+    if (slots[0]) beginSelectedPlay(slots[0].key);
   } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
     const idx = parseInt(key, 10) - 1;
-    if (slots[idx]) startPlayFromSelect(slots[idx].key);
+    if (slots[idx]) beginSelectedPlay(slots[idx].key);
   } else if ((key === "arrowleft" || key === "arrowright") && game.state === "playModePlaySelect") {
     const pages = getPlaySelectPageCount();
     if (pages > 1) {
@@ -195,7 +364,7 @@ window.addEventListener("keydown", (e) => {
     if (game.state === "pauseMenu") {
       game.state = game.stateBeforePauseMenu;
       game.stateBeforePauseMenu = null;
-    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect"].includes(game.state)) {
+    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(game.state)) {
       game.stateBeforePauseMenu = game.state;
       game.state = "pauseMenu";
     }
@@ -217,12 +386,22 @@ function updatePlayerInput(dt) {
   if (keys["s"]) dy += 1;
   if (keys["a"]) dx -= 1;
   if (keys["d"]) dx += 1;
+  dx += game.touchMoveX;
+  dy += game.touchMoveY;
 
   if (dx === 0 && dy === 0) return;
 
   const len = Math.hypot(dx, dy);
   dx /= len;
   dy /= len;
+
+  if (game.mode === "defense") {
+    const defender = getDefenseControlledPlayer();
+    defender.x += dx * defender.speed * dt;
+    defender.y += dy * defender.speed * dt;
+    clampPlayerToField(defender);
+    return;
+  }
 
   const isPlayMode = game.mode === "play" && (
     game.playModePhase === "sweep" ||

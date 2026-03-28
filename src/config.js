@@ -14,15 +14,14 @@ const FIELD = {
 
 // Menu button layout (canvas coordinates) for hit testing
 const MENU_BUTTONS = {
-  gameMode:    { x: 390, y: 279, w: 180, h: 34 },
-  passingMode: { x: 390, y: 331, w: 180, h: 34 },
-  playMode:    { x: 390, y: 383, w: 180, h: 34 }
+  playMode: { x: 360, y: 300, w: 240, h: 46 },
+  defenseMode: { x: 360, y: 366, w: 240, h: 46 }
 };
 
 // Pause overlay menu (shown when Escape is pressed during a game)
 const PAUSE_MENU_BUTTONS = {
   resume:   { x: 330, y: 240, w: 300, h: 56 },
-  playMode: { x: 330, y: 320, w: 300, h: 56 },
+  modeRestart: { x: 330, y: 320, w: 300, h: 56 },
   home:     { x: 330, y: 400, w: 300, h: 56 }
 };
 
@@ -44,6 +43,7 @@ const PLAY_SELECT_LABELS = {
 };
 
 const PLAY_SELECT_PANEL = { x: 40, y: 88, w: 880, h: 398 };
+const DEFENSE_SELECT_PANEL = { x: 80, y: 88, w: 800, h: 398 };
 
 /** Vertical layout inside play panel (filter row → hints → plays). */
 const PLAY_SELECT_FILTER_Y = 12;
@@ -71,6 +71,29 @@ function getPlaySelectFilterBarRects() {
     all: { x: x0, y, w: bw, h },
     run: { x: x0 + bw + gap, y, w: bw, h },
     pass: { x: x0 + (bw + gap) * 2, y, w: bw, h }
+  };
+}
+
+function getDefenseSelectOptionRects() {
+  const P = DEFENSE_SELECT_PANEL;
+  const gap = 22;
+  const pad = 24;
+  const bw = (P.w - pad * 2 - gap * 2) / 3;
+  const by = P.y + 92;
+  return {
+    A: { x: P.x + pad, y: by, w: bw, h: 160 },
+    B: { x: P.x + pad + bw + gap, y: by, w: bw, h: 160 },
+    random: { x: P.x + pad + (bw + gap) * 2, y: by, w: bw, h: 160 }
+  };
+}
+
+function getDefenseSelectOffenseToggleRect() {
+  const P = DEFENSE_SELECT_PANEL;
+  return {
+    x: P.x + 170,
+    y: P.y + 292,
+    w: P.w - 340,
+    h: 52
   };
 }
 
@@ -134,6 +157,43 @@ function getPlaySelectPageNavRects() {
   };
 }
 
+function getMobileJoystickRect() {
+  return {
+    cx: 104,
+    cy: canvas.height - 92,
+    outerR: 54,
+    innerR: 24,
+    hitR: 88
+  };
+}
+
+function getMobilePauseButtonRect() {
+  return {
+    x: canvas.width - 84,
+    y: 66,
+    w: 56,
+    h: 34
+  };
+}
+
+function getMobileRestartButtonRect() {
+  return {
+    x: canvas.width / 2 - 110,
+    y: canvas.height / 2 + 58,
+    w: 220,
+    h: 44
+  };
+}
+
+function getMobileSwitchButtonRect() {
+  return {
+    x: canvas.width - 132,
+    y: canvas.height - 88,
+    w: 104,
+    h: 42
+  };
+}
+
 const CONFIG = {
   winScore: 5,
   playerRadius: 20,
@@ -171,7 +231,7 @@ const COLORS = {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // "menu" | "playing" | ... | "playModePlaySelect" | "touchdownPopup"
+  state: "menu", // "menu" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup"
   stateBeforePauseMenu: null,
   mode: null,   // "game" | "passing" | "play"
   winner: null,
@@ -211,7 +271,18 @@ const game = {
   selectedDefense: "random",     // "A" | "B" | "random" — player's chosen defensive scheme
   passDefDeepTarget: null,       // "horse" | "pete" — which receiver Cluck Norris is assigned (Defense B)
   playModePlaySelectPage: 0,     // horizontal play picker page index
-  playModePlayFilter: null      // null = all plays | "run" | "pass"
+  playModePlayFilter: null,     // null = all plays | "run" | "pass"
+  prePlayCadenceIndex: 0,
+  prePlayCadenceTimer: 0,
+  defenseModeControlledPlayerId: "player2",
+  defenseModeCpuPlay: null,
+  defenseModeSelectedOffensePlay: "random",
+  touchControlsEnabled: false,
+  touchMoveX: 0,
+  touchMoveY: 0,
+  touchStickActive: false,
+  touchStickKnobX: 0,
+  touchStickKnobY: 0
 };
 
 const keys = {};

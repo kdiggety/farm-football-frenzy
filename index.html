@@ -30,7 +30,9 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      min-height: 100svh;
       padding: 16px;
+      overscroll-behavior: none;
     }
 
     .game-shell {
@@ -39,6 +41,7 @@
       box-shadow: 0 12px 30px var(--shadow);
       padding: 14px;
       border-radius: 10px;
+      width: min(100%, 992px);
     }
 
     canvas {
@@ -48,6 +51,9 @@
       image-rendering: pixelated;
       max-width: 100%;
       height: auto;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     .help {
@@ -61,14 +67,31 @@
     .help strong {
       color: #fff;
     }
+
+    @media (max-width: 700px) {
+      body {
+        padding: 8px;
+        align-items: stretch;
+      }
+
+      .game-shell {
+        padding: 8px;
+        border-width: 2px;
+        border-radius: 0;
+      }
+
+      .help {
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="game-shell">
     <canvas id="game" width="960" height="540" aria-label="Farm Football Frenzy"></canvas>
     <div class="help">
-      <strong>Game Mode:</strong> W A S D to move; carry the ball into the end zone. |
-      <strong>Passing Mode:</strong> W A S D to move; click where you want to throw the ball. |
+      <strong>Desktop:</strong> W A S D to move; click to throw; press Space to switch defenders in Defense mode. |
+      <strong>Mobile:</strong> left joystick to move; tap the field to throw; tap Switch to change defenders. |
       <strong>Restart:</strong> R after game over
     </div>
   </div>
