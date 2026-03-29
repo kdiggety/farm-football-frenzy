@@ -17,7 +17,7 @@ function getCanvasCoords(e) {
 }
 
 function isPauseableState(state) {
-  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(state);
+  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence", "interceptionPopup"].includes(state);
 }
 
 function togglePauseMenu() {
@@ -78,6 +78,8 @@ function handleCanvasTap(p) {
   game.mouseX = p.x;
   game.mouseY = p.y;
 
+  if (game.interceptionPopupTimer > 0) return;
+
   if (game.touchControlsEnabled && game.state !== "pauseMenu" && isPauseableState(game.state)) {
     const pause = getMobilePauseButtonRect();
     if (p.x >= pause.x && p.x <= pause.x + pause.w && p.y >= pause.y && p.y <= pause.y + pause.h) {
@@ -130,7 +132,15 @@ function handleCanvasTap(p) {
     }
     return;
   }
+  if (game.state === "interceptionPopup") {
+    return;
+  }
   if (game.state === "playModeDowned") {
+    if (game.playModeLastResultType === "interception") {
+      game.state = "gameOver";
+      game.winner = player2;
+      return;
+    }
     if (game.mode === "defense") {
       advanceDefenseModeDown(game.playModeDownedSpot);
     } else {
@@ -319,6 +329,8 @@ window.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   keys[key] = true;
 
+  if (game.interceptionPopupTimer > 0) return;
+
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
       startPlayModeDrive();
@@ -328,6 +340,11 @@ window.addEventListener("keydown", (e) => {
       restartGame();
     }
   } else if ((key === "enter" || key === " ") && game.state === "playModeDowned") {
+    if (game.playModeLastResultType === "interception") {
+      game.state = "gameOver";
+      game.winner = player2;
+      return;
+    }
     if (game.mode === "defense") {
       advanceDefenseModeDown(game.playModeDownedSpot);
     } else {

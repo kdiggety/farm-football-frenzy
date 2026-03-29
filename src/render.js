@@ -243,7 +243,10 @@ function drawShadow(x, y, radiusX, radiusY) {
   ctx.fill();
 }
 
-function drawPlayer(player, label, accentText) {
+function drawPlayer(player) {
+  const label = player.displayLabel || player.name;
+  const accentText = player.ballAccent || COLORS.white;
+  const appearanceId = player.appearanceId || player.id;
   drawShadow(player.x, player.y + player.radius + 8, player.radius * 0.9, 7);
 
   // Body
@@ -253,14 +256,14 @@ function drawPlayer(player, label, accentText) {
   ctx.fill();
 
   // Ears / snout / unique feature details
-  if (player.id === "player1") {
+  if (appearanceId === "player1") {
     // Barnaby — bunny ears
     ctx.fillStyle = "#93c5fd";
     ctx.beginPath();
     ctx.ellipse(player.x - 8, player.y - 20, 5, 10, -0.3, 0, Math.PI * 2);
     ctx.ellipse(player.x + 8, player.y - 20, 5, 10, 0.3, 0, Math.PI * 2);
     ctx.fill();
-  } else if (player.id === "cluckNorris") {
+  } else if (appearanceId === "cluckNorris") {
     // Cluck Norris — red comb (3 bumps on top)
     ctx.fillStyle = "#dc2626";
     for (let i = -1; i <= 1; i++) {
@@ -279,7 +282,7 @@ function drawPlayer(player, label, accentText) {
     ctx.lineTo(player.x,     player.y + 10);
     ctx.closePath();
     ctx.fill();
-  } else if (player.id === "lilTunnelPete") {
+  } else if (appearanceId === "lilTunnelPete") {
     // Lil' Tunnel Pete — floppy dog ears drooping down the sides
     ctx.fillStyle = "#92400e";
     ctx.beginPath();
@@ -345,11 +348,19 @@ function drawPlayer(player, label, accentText) {
 }
 
 function drawBall() {
-  drawShadow(ball.x, ball.y + 10, 10, 5);
+  const visualBall = getBallVisualState(ball);
+  const height = visualBall.height;
+  const visualY = visualBall.y;
+  const shadowW = 10 + height * 0.06;
+  const shadowH = 5 + height * 0.025;
+  const ballW = Math.max(8.5, 12 - height * 0.025);
+  const ballH = Math.max(5.5, 8 - height * 0.018);
+
+  drawShadow(ball.x, visualBall.shadowY, shadowW, shadowH);
 
   ctx.fillStyle = COLORS.ball;
   ctx.beginPath();
-  ctx.ellipse(ball.x, ball.y, 12, 8, -0.35, 0, Math.PI * 2);
+  ctx.ellipse(ball.x, visualY, ballW, ballH, -0.35, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = "#5b3718";
@@ -360,12 +371,12 @@ function drawBall() {
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(ball.x - 3, ball.y - 2);
-  ctx.lineTo(ball.x + 3, ball.y + 2);
-  ctx.moveTo(ball.x - 1, ball.y - 4);
-  ctx.lineTo(ball.x + 5, ball.y + 0);
-  ctx.moveTo(ball.x - 5, ball.y + 0);
-  ctx.lineTo(ball.x + 1, ball.y + 4);
+  ctx.moveTo(ball.x - 3, visualY - 2);
+  ctx.lineTo(ball.x + 3, visualY + 2);
+  ctx.moveTo(ball.x - 1, visualY - 4);
+  ctx.lineTo(ball.x + 5, visualY + 0);
+  ctx.moveTo(ball.x - 5, visualY + 0);
+  ctx.lineTo(ball.x + 1, visualY + 4);
   ctx.stroke();
 }
 
@@ -390,7 +401,9 @@ function drawScoreboard() {
     ctx.textAlign = "center";
     ctx.fillStyle = "#e5e7eb";
     ctx.font = "14px Arial";
-    const modeLabel = game.mode === "defense" ? "Defense Mode" : "Play Mode";
+    const modeLabel = game.mode === "defense"
+      ? (game.turnoverSeriesActive ? "Turnover Defense" : "Defense Mode")
+      : "Play Mode";
     ctx.fillText(`${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, 54);
   }
 }
@@ -411,16 +424,21 @@ function buildPlayResultText() {
   const yds   = game.playModeLastYards;
 
   if (rt === "incomplete") return { text: `${label} — Incomplete Pass`, color: "#94a3b8" };
+  if (rt === "interception") return { text: `${label} — Interception!`, color: "#f97316" };
   if (rt === "sack")       return { text: `${label} — Sack, ${yds} yds`, color: "#f87171" };
   if (rt === "gain")       return { text: `${label} — +${yds} yard${yds !== 1 ? "s" : ""}`, color: "#4ade80" };
   if (rt === "loss")       return { text: `${label} — ${yds} yard${yds !== -1 ? "s" : ""}`, color: "#f87171" };
   return { text: `${label} — No gain`, color: "#fbbf24" };
 }
 
-function drawCenterMessage(title, subtitle, detail, buttonText = null) {
+function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyle = null) {
   const hasDetail = !!detail;
   const hasSubtitle = !!subtitle;
   const hasButton = !!buttonText;
+  const flashTitle = !!titleStyle?.flash;
+  const flashOn = !flashTitle || Math.floor(Date.now() / 220) % 2 === 0;
+  const titleColor = titleStyle?.color || COLORS.white;
+  const titleDimColor = titleStyle?.dimColor || "#fdba74";
   const boxH = hasDetail
     ? (hasButton ? 220 : 185)
     : (hasButton ? 185 : 150);
@@ -434,8 +452,11 @@ function drawCenterMessage(title, subtitle, detail, buttonText = null) {
   ctx.strokeRect(180, boxY, 600, boxH);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = COLORS.white;
   ctx.font = "bold 34px Arial";
+  ctx.lineWidth = flashTitle ? 5 : 3;
+  ctx.strokeStyle = flashTitle ? (flashOn ? "#fff7ed" : "#7c2d12") : "#111827";
+  ctx.fillStyle = flashTitle ? (flashOn ? titleColor : titleDimColor) : titleColor;
+  ctx.strokeText(title, canvas.width / 2, boxY + 52);
   ctx.fillText(title, canvas.width / 2, boxY + 52);
 
   if (hasSubtitle) {
@@ -482,20 +503,29 @@ function drawSafetyPopup() {
   ctx.textBaseline = "alphabetic";
 }
 
-function drawTouchdownPopup() {
+function drawBigPopupBanner(text) {
+  ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = COLORS.white;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
   ctx.strokeStyle = "#facc15";
   ctx.lineWidth = 6;
   ctx.font = "bold 96px Arial";
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  ctx.strokeText("TOUCHDOWN", cx, cy);
-  ctx.fillText("TOUCHDOWN", cx, cy);
-  ctx.textBaseline = "alphabetic";
+  ctx.strokeText(text, cx, cy);
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+function drawInterceptionHoldOverlay() {
+  drawBigPopupBanner("INTERCEPTION");
+}
+
+function drawTouchdownPopup() {
+  drawBigPopupBanner("TOUCHDOWN");
 }
 
 function drawMenuBackground() {
@@ -1007,7 +1037,8 @@ function drawDefensePreviewDiagram(defenseKey, bx, by, bw, bh) {
   const top = by + 40;
   const width = bw - pad * 2;
   const height = bh - 64;
-  const losX = left + Math.round(width * 0.35);
+  const mirrorForTurnover = game.turnoverSeriesActive;
+  const losX = left + Math.round(width * (mirrorForTurnover ? 0.65 : 0.35));
 
   ctx.save();
   ctx.fillStyle = "rgba(47,125,50,0.32)";
@@ -1024,10 +1055,10 @@ function drawDefensePreviewDiagram(defenseKey, bx, by, bw, bh) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const qbX = left + Math.round(width * 0.2);
+  const qbX = left + Math.round(width * (mirrorForTurnover ? 0.8 : 0.2));
   const midY = top + height / 2;
-  const closeX = left + Math.round(width * 0.55);
-  const deepX = left + Math.round(width * 0.78);
+  const closeX = left + Math.round(width * (mirrorForTurnover ? 0.45 : 0.55));
+  const deepX = left + Math.round(width * (mirrorForTurnover ? 0.22 : 0.78));
   const topY = top + Math.round(height * 0.22);
   const botY = top + Math.round(height * 0.78);
   const midDefY = top + Math.round(height * 0.5);
@@ -1107,11 +1138,17 @@ function drawDefenseSelectOverlay() {
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 24px Arial";
-  ctx.fillText("Select defense", canvas.width / 2, P.y + 68);
+  ctx.fillText(game.turnoverSeriesActive ? "Turnover! Select defense" : "Select defense", canvas.width / 2, P.y + 68);
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
   ctx.fillText(`Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, P.y + 92);
-  ctx.fillText("Choose defense up top and toggle the offense play below.", canvas.width / 2, P.y + 112);
+  ctx.fillText(
+    game.turnoverSeriesActive
+      ? "Pig's offense takes over here. Choose a defense and offense look below."
+      : "Choose defense up top and toggle the offense play below.",
+    canvas.width / 2,
+    P.y + 112
+  );
 
   const labels = {
     A: { title: "Run Defense", sub: "Two defenders up front" },
@@ -1183,6 +1220,23 @@ function drawPrePlayCadenceOverlay() {
   ctx.strokeStyle = "rgba(17, 24, 39, 0.72)";
   ctx.lineWidth = 5;
   ctx.strokeText(word, canvas.width / 2, canvas.height / 2 + 22);
+  ctx.restore();
+}
+
+function drawWinPopup() {
+  const flashOn = Math.floor(game.winPopupTimer / 250) % 2 === 0;
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (flashOn) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fef3c7";
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 6;
+    ctx.font = "bold 88px Arial";
+    ctx.strokeText("You win", canvas.width / 2, canvas.height / 2 + 22);
+    ctx.fillText("You win", canvas.width / 2, canvas.height / 2 + 22);
+  }
   ctx.restore();
 }
 
@@ -1474,12 +1528,12 @@ function render() {
   }
 
   drawScoreboard();
-  drawPlayer(player1,      "Barnaby",         "#bfdbfe");
-  drawPlayer(player2,      "Professor Pig",   "#fbcfe8");
-  drawPlayer(allyHorse,    "Sir Neigh-a-Lot", "#fed7aa");
-  drawPlayer(allyDonkey,   "Deputy Hee-Haw",  "#bbf7d0");
-  drawPlayer(cluckNorris,  "Big Coop",        "#fca5a5");
-  drawPlayer(lilTunnelPete,"Lil' Tunnel Pete","#fef08a");
+  drawPlayer(player1);
+  drawPlayer(player2);
+  drawPlayer(allyHorse);
+  drawPlayer(allyDonkey);
+  drawPlayer(cluckNorris);
+  drawPlayer(lilTunnelPete);
   drawControlledDefenderMarker();
   drawBall();
 
@@ -1530,6 +1584,8 @@ function render() {
     drawSafetyPopup();
   } else if (game.state === "touchdownPopup") {
     drawTouchdownPopup();
+  } else if (game.state === "winPopup") {
+    drawWinPopup();
   } else if (game.state === "scorePause" && game.scoredBy) {
     if (game.scoredBy === player1) {
       drawTouchdownPopup();
@@ -1539,15 +1595,19 @@ function render() {
     }
   } else if (game.state === "playModeDowned") {
     const isFourthDown = game.playModeDown >= game.playModeMaxDowns;
-    const downedTitle  = game.playModeIncomplete ? "Incomplete!" : "Down!";
+    const isInterception = game.playModeLastResultType === "interception";
+    const downedTitle  = isInterception ? "INTERCEPTION" : (game.playModeIncomplete ? "Incomplete!" : "Down!");
     const detail       = (game.mode === "play" || game.mode === "defense") ? buildPlayResultText() : null;
+    const titleStyle = isInterception ? { color: "#f97316", dimColor: "#f97316" } : null;
     if (game.touchControlsEnabled) {
-      drawCenterMessage(downedTitle, "", detail, "Tap");
+      drawCenterMessage(downedTitle, "", detail, "Tap", titleStyle);
     } else {
-      const downPrompt = game.mode === "defense"
+      const downPrompt = isInterception
+        ? "Press Enter to finish the drive"
+        : game.mode === "defense"
         ? (isFourthDown ? "Press Enter to finish the drive" : "Press Enter for next defense")
         : (isFourthDown ? "Press Enter to continue" : "Press Enter for next play");
-      drawCenterMessage(downedTitle, downPrompt, detail);
+      drawCenterMessage(downedTitle, downPrompt, detail, null, titleStyle);
     }
   } else if (game.state === "gameOver") {
     if (game.mode === "play" && !game.winner) {
@@ -1556,6 +1616,10 @@ function render() {
       const winText = game.winner === player1 ? "Barnaby Wins!" : "Professor Pig Wins!";
       drawCenterMessage(winText, "Press R to restart");
     }
+  }
+
+  if (game.interceptionPopupTimer > 0) {
+    drawInterceptionHoldOverlay();
   }
 
   drawMobileTouchControls();

@@ -228,6 +228,7 @@ function getMobileSwitchButtonRect() {
 
 const CONFIG = {
   winScore: 5,
+  playModeTouchdownsToWin: 3,
   playerRadius: 20,
   ballRadius: 9,
   playerSpeed: 112.5,
@@ -263,7 +264,7 @@ const COLORS = {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // "menu" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup"
+  state: "menu", // "menu" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup" | "winPopup" | "interceptionPopup"
   stateBeforePauseMenu: null,
   mode: null,   // "game" | "passing" | "play"
   winner: null,
@@ -282,6 +283,7 @@ const game = {
   playModeCurrentPlay: null,
   playModeSweepHandoffT: 0,
   touchdownPopupTimer: 0,
+  winPopupTimer: 0,
   safetyPopupTimer: 0,
   afterTouchdownAction: null,
   playModeDefense: null,       // "A" | "B"
@@ -291,7 +293,9 @@ const game = {
   playModeIncomplete: false,   // true when last play ended as an incomplete pass
   playModeLastYards: 0,        // yards gained/lost on the last play
   playModeLastPlayType: null,  // "sweepRight" | "sweepLeft" | "passRight" | "passLeft" | "barnPlay" | "scrambledEggs" | null
-  playModeLastResultType: "noGain", // "gain" | "loss" | "noGain" | "incomplete" | "sack"
+  playModeLastResultType: "noGain", // "gain" | "loss" | "noGain" | "incomplete" | "sack" | "interception"
+  interceptionPopupTimer: 0,
+  turnoverSeriesActive: false,
   passPlayDropbackDone: false,   // true once QB has finished auto-dropping back
   passPlayCanThrow: true,        // false once QB has crossed the line of scrimmage
   passPlayTargetReceiver: null,  // "horse" | "pete" — intended receiver on the current throw
@@ -323,22 +327,30 @@ const keys = {};
 const player1 = {
   id: "player1",
   name: "Barnaby the Donkey",
+  displayLabel: "Barnaby",
+  appearanceId: "player1",
+  teamOwnerId: "player1",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.playerSpeed,
   color: COLORS.donkey,
+  ballAccent: "#bfdbfe",
   score: 0
 };
 
 const player2 = {
   id: "player2",
   name: "Professor Pig",
+  displayLabel: "Professor Pig",
+  appearanceId: "player2",
+  teamOwnerId: "player2",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
   color: COLORS.pig,
+  ballAccent: "#fbcfe8",
   score: 0
 };
 
@@ -348,50 +360,83 @@ const ball = {
   radius: CONFIG.ballRadius,
   carrier: null, // null | player1 | player2
   inFlight: false,
+  startX: 0,
+  startY: 0,
   targetX: 0,
   targetY: 0,
+  flightElapsedMs: 0,
+  flightDurationMs: 0,
+  flightArcPeak: 0,
+  arcHeight: 0,
+  failedInterceptorIds: [],
   settleTimer: 0
 };
+
+function getBallVisualState(ballRef = ball) {
+  const height = ballRef.arcHeight || 0;
+  return {
+    x: ballRef.x,
+    y: ballRef.y - height * 0.34,
+    height,
+    shadowY: ballRef.y + 10
+  };
+}
 
 const allyHorse = {
   id: "allyHorse",
   name: "Sir Neigh-a-Lot",
+  displayLabel: "Sir Neigh-a-Lot",
+  appearanceId: "allyHorse",
+  teamOwnerId: "player1",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
-  color: COLORS.horse
+  color: COLORS.horse,
+  ballAccent: "#fed7aa"
 };
 
 const allyDonkey = {
   id: "allyDonkey",
   name: "Deputy Hee-Haw",
+  displayLabel: "Deputy Hee-Haw",
+  appearanceId: "allyDonkey",
+  teamOwnerId: "player2",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
-  color: COLORS.sidekickDonkey
+  color: COLORS.sidekickDonkey,
+  ballAccent: "#bbf7d0"
 };
 
 // Professor Pig's team — new defender
 const cluckNorris = {
   id: "cluckNorris",
   name: "Big Coop",
+  displayLabel: "Big Coop",
+  appearanceId: "cluckNorris",
+  teamOwnerId: "player2",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
-  color: "#ffffff"  // white feathers
+  color: "#ffffff",  // white feathers
+  ballAccent: "#fca5a5"
 };
 
 // Barnaby's team — new blocker/receiver
 const lilTunnelPete = {
   id: "lilTunnelPete",
   name: "Lil' Tunnel Pete",
+  displayLabel: "Lil' Tunnel Pete",
+  appearanceId: "lilTunnelPete",
+  teamOwnerId: "player1",
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.playerSpeed,
-  color: "#c8a97e"  // tan
+  color: "#c8a97e",  // tan
+  ballAccent: "#fef08a"
 };
 
