@@ -264,7 +264,17 @@ const COLORS = {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // "menu" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup" | "winPopup" | "interceptionPopup"
+  state: "menu", // "menu" | "playTeamSelect" | "playOpponentReveal" | "playCoinToss" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup" | "winPopup" | "interceptionPopup"
+  coinTossPhase: null, // null | "pickCall" | "flipping" | "result" | "userChooseSide" | "cpuChose"
+  coinTossCall: null, // null | "heads" | "tails" — player's call before the flip
+  coinTossResult: null, // null | "heads" | "tails"
+  coinTossWon: null, // null | boolean — call matched flip
+  coinTossCpuChoice: null, // null | "offense" | "defense" — what CPU picks if player lost toss
+  coinTossFlipTimer: 0,
+  teamSelectUser: null,   // "noFlyZone" | "pasture" | "barnaby" | "professorPig" | null
+  playUserTeamId: null,
+  playCpuTeamId: null,
+  teamScores: null,       // per-team TD counts when using PLAY_TEAM_IDS
   stateBeforePauseMenu: null,
   mode: null,   // "game" | "passing" | "play"
   winner: null,

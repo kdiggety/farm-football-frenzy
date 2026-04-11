@@ -80,7 +80,83 @@ function handleCanvasTap(p) {
 
   if (game.interceptionPopupTimer > 0) return;
 
-  if (game.touchControlsEnabled && game.state !== "pauseMenu" && isPauseableState(game.state)) {
+  if (game.state === "playCoinToss") {
+    const L = getCoinTossLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.back)) {
+      backFromCoinTossToOpponentReveal();
+      return;
+    }
+    if (game.coinTossPhase === "pickCall") {
+      if (hit(L.heads)) beginCoinTossFlip("heads");
+      else if (hit(L.tails)) beginCoinTossFlip("tails");
+      return;
+    }
+    if (game.coinTossPhase === "result" && hit(L.resultContinue)) {
+      continueFromCoinTossResult();
+      return;
+    }
+    if (game.coinTossPhase === "userChooseSide") {
+      if (hit(L.offense)) startPlayFromUserCoinChoice("offense");
+      else if (hit(L.defense)) startPlayFromUserCoinChoice("defense");
+      return;
+    }
+    if (game.coinTossPhase === "cpuChose" && hit(L.cpuContinue)) {
+      startPlayAfterCpuCoinChoice();
+      return;
+    }
+    return;
+  }
+
+  if (game.state === "playOpponentReveal") {
+    const L = getOpponentRevealLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.back)) {
+      returnToHomeMenu();
+      return;
+    }
+    if (hit(L.changeTeam)) {
+      backFromOpponentRevealToTeamSelect();
+      return;
+    }
+    if (hit(L.play)) {
+      startPlayAfterOpponentReveal();
+      return;
+    }
+    return;
+  }
+
+  if (game.state === "playTeamSelect") {
+    const L = getTeamSelectLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.back)) {
+      returnToHomeMenu();
+      return;
+    }
+    for (const id of PLAY_TEAM_IDS) {
+      if (hit(L[id])) {
+        game.teamSelectUser = id;
+        return;
+      }
+    }
+    if (hit(L.start)) {
+      advanceToOpponentReveal();
+      return;
+    }
+    return;
+  }
+
+  // Pause hot-corner must run AFTER play/defense select handling would — otherwise taps on the
+  // right side of the play-select panel overlap the pause rect and never reach play buttons.
+  if (
+    game.touchControlsEnabled &&
+    game.state !== "pauseMenu" &&
+    isPauseableState(game.state) &&
+    game.state !== "playModePlaySelect" &&
+    game.state !== "defenseModeSelect" &&
+    game.state !== "playOpponentReveal" &&
+    game.state !== "playCoinToss"
+  ) {
     const pause = getMobilePauseButtonRect();
     if (p.x >= pause.x && p.x <= pause.x + pause.w && p.y >= pause.y && p.y <= pause.y + pause.h) {
       togglePauseMenu();
@@ -331,8 +407,54 @@ window.addEventListener("keydown", (e) => {
 
   if (game.interceptionPopupTimer > 0) return;
 
+  if (game.state === "playCoinToss") {
+    if (game.coinTossPhase === "pickCall" && (key === "h" || key === "1")) {
+      e.preventDefault();
+      beginCoinTossFlip("heads");
+      return;
+    }
+    if (game.coinTossPhase === "pickCall" && (key === "t" || key === "2")) {
+      e.preventDefault();
+      beginCoinTossFlip("tails");
+      return;
+    }
+    if ((key === "enter" || key === " ") && game.coinTossPhase === "result") {
+      e.preventDefault();
+      continueFromCoinTossResult();
+      return;
+    }
+    if (game.coinTossPhase === "userChooseSide" && (key === "o" || key === "1")) {
+      e.preventDefault();
+      startPlayFromUserCoinChoice("offense");
+      return;
+    }
+    if (game.coinTossPhase === "userChooseSide" && (key === "d" || key === "2")) {
+      e.preventDefault();
+      startPlayFromUserCoinChoice("defense");
+      return;
+    }
+    if ((key === "enter" || key === " ") && game.coinTossPhase === "cpuChose") {
+      e.preventDefault();
+      startPlayAfterCpuCoinChoice();
+      return;
+    }
+  }
+
+  if ((key === "enter" || key === " ") && game.state === "playTeamSelect") {
+    e.preventDefault();
+    advanceToOpponentReveal();
+    return;
+  }
+
+  if ((key === "enter" || key === " ") && game.state === "playOpponentReveal") {
+    e.preventDefault();
+    startPlayAfterOpponentReveal();
+    return;
+  }
+
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
+      if (game.playUserTeamId) resetPlayModeTeamScores();
       startPlayModeDrive();
     } else if (game.mode === "defense") {
       startDefenseMode();
@@ -363,7 +485,7 @@ window.addEventListener("keydown", (e) => {
     setPlayModePlayFilter("run");
   } else if (key === "p" && game.state === "playModePlaySelect") {
     setPlayModePlayFilter("pass");
-  } else if (key === "enter" && game.state === "playModePlaySelect") {
+  } else if ((key === "enter" || key === " ") && game.state === "playModePlaySelect") {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
     if (slots[0]) beginSelectedPlay(slots[0].key);
   } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
@@ -388,7 +510,13 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
   if (key === "escape") {
-    if (game.state === "pauseMenu") {
+    if (game.state === "playCoinToss") {
+      backFromCoinTossToOpponentReveal();
+    } else if (game.state === "playOpponentReveal") {
+      backFromOpponentRevealToTeamSelect();
+    } else if (game.state === "playTeamSelect") {
+      returnToHomeMenu();
+    } else if (game.state === "pauseMenu") {
       game.state = game.stateBeforePauseMenu;
       game.stateBeforePauseMenu = null;
     } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(game.state)) {

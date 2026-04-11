@@ -369,6 +369,10 @@ function hasReachedDropbackTarget(currentX, targetX) {
 function applyDefaultFieldRoles() {
   game.turnoverSeriesActive = false;
 
+  [player1, player2, allyHorse, allyDonkey, cluckNorris, lilTunnelPete].forEach((e) => {
+    delete e.teamTag;
+  });
+
   player1.displayLabel = "Barnaby";
   player1.appearanceId = "player1";
   player1.color = COLORS.donkey;
@@ -408,6 +412,11 @@ function applyDefaultFieldRoles() {
 
 function applyTurnoverFieldRoles() {
   game.turnoverSeriesActive = true;
+
+  if (game.playUserTeamId && game.playCpuTeamId) {
+    applyPlayModeTeamLayout(game.playCpuTeamId, game.playUserTeamId);
+    return;
+  }
 
   player1.displayLabel = "Professor Pig";
   player1.appearanceId = "player2";
@@ -625,6 +634,10 @@ function updateInterceptionReturn(dt) {
 
 function returnToHomeMenu() {
   applyDefaultFieldRoles();
+  game.playUserTeamId = null;
+  game.playCpuTeamId = null;
+  game.teamScores = null;
+  game.teamSelectUser = null;
   game.state = "menu";
   game.stateBeforePauseMenu = null;
   game.mode = null;
@@ -645,6 +658,27 @@ function returnToHomeMenu() {
 }
 
 function finishDriveTouchdown(scorer) {
+  if (game.playUserTeamId && scorer.teamTag) {
+    if (!game.teamScores) resetPlayModeTeamScores();
+    game.teamScores[scorer.teamTag]++;
+    playTouchdownAudio(scorer);
+    if (scorer.teamTag === game.playCpuTeamId) {
+      game.state = "gameOver";
+      game.winner = player2;
+      return;
+    }
+    if (game.teamScores[game.playUserTeamId] >= CONFIG.playModeTouchdownsToWin) {
+      game.state = "winPopup";
+      game.winPopupTimer = 3000;
+      game.afterTouchdownAction = null;
+      return;
+    }
+    game.state = "touchdownPopup";
+    game.touchdownPopupTimer = 4000;
+    game.afterTouchdownAction = "startPlayModeDrive";
+    return;
+  }
+
   const scoringTeam = getScoringTeamForPlayer(scorer);
   scoringTeam.score += 1;
   if (game.mode === "defense") {
@@ -755,7 +789,12 @@ function positionForPlayModeAt(x) {
 
 function startPlayModeDrive(fromX) {
   const startX = fromX !== undefined ? fromX : getLeftTwentyYardLineX();
-  applyDefaultFieldRoles();
+  game.turnoverSeriesActive = false;
+  if (game.playUserTeamId && game.playCpuTeamId) {
+    applyPlayModeTeamLayout(game.playUserTeamId, game.playCpuTeamId);
+  } else {
+    applyDefaultFieldRoles();
+  }
   game.mode = "play";
   game.state = "playModePlaySelect";
   game.interceptionPopupTimer = 0;
@@ -770,6 +809,12 @@ function startPlayModeDrive(fromX) {
 
 function startDefenseModeDrive(fromX) {
   const startX = fromX !== undefined ? fromX : getLeftTwentyYardLineX();
+  game.turnoverSeriesActive = false;
+  if (game.playUserTeamId && game.playCpuTeamId) {
+    applyPlayModeTeamLayout(game.playCpuTeamId, game.playUserTeamId);
+  } else {
+    applyDefaultFieldRoles();
+  }
   game.mode = "defense";
   game.state = "defenseModeSelect";
   game.interceptionPopupTimer = 0;
@@ -1406,8 +1451,108 @@ function startPlayMode() {
   game.winner = null;
   game.scorePauseTimer = 0;
   game.scoredBy = null;
+  game.teamSelectUser = null;
+  game.playUserTeamId = null;
+  game.playCpuTeamId = null;
+  game.teamScores = null;
   startGameMusic();
-  startPlayModeDrive();
+  game.state = "playTeamSelect";
+}
+
+/** After picking your team — show matchup screen (CPU drawn from the other three teams). */
+function advanceToOpponentReveal() {
+  if (!game.teamSelectUser) {
+    return;
+  }
+  game.playUserTeamId = game.teamSelectUser;
+  game.playCpuTeamId = pickRandomCpuOpponent(game.teamSelectUser);
+  game.state = "playOpponentReveal";
+}
+
+/** From matchup screen — coin toss, then begin the drive. */
+function startPlayAfterOpponentReveal() {
+  if (!game.playUserTeamId || !game.playCpuTeamId) {
+    return;
+  }
+  resetPlayModeTeamScores();
+  player1.score = 0;
+  player2.score = 0;
+  game.winner = null;
+  game.state = "playCoinToss";
+  game.coinTossPhase = "pickCall";
+  game.coinTossCall = null;
+  game.coinTossResult = null;
+  game.coinTossWon = null;
+  game.coinTossCpuChoice = null;
+  game.coinTossFlipTimer = 0;
+}
+
+function beginCoinTossFlip(call) {
+  if (game.state !== "playCoinToss" || game.coinTossPhase !== "pickCall") return;
+  if (call !== "heads" && call !== "tails") return;
+  game.coinTossCall = call;
+  game.coinTossPhase = "flipping";
+  game.coinTossFlipTimer = 1500;
+  game.coinTossResult = Math.random() < 0.5 ? "heads" : "tails";
+}
+
+function updateCoinToss(dt) {
+  if (game.coinTossPhase !== "flipping") return;
+  game.coinTossFlipTimer -= dt * 1000;
+  if (game.coinTossFlipTimer <= 0) {
+    game.coinTossPhase = "result";
+    game.coinTossFlipTimer = 0;
+    game.coinTossWon = game.coinTossCall === game.coinTossResult;
+  }
+}
+
+/** After seeing flip result — branch to user pick or CPU pick. */
+function continueFromCoinTossResult() {
+  if (game.state !== "playCoinToss" || game.coinTossPhase !== "result") return;
+  if (game.coinTossWon) {
+    game.coinTossPhase = "userChooseSide";
+    return;
+  }
+  game.coinTossCpuChoice = Math.random() < 0.5 ? "offense" : "defense";
+  game.coinTossPhase = "cpuChose";
+}
+
+function resetCoinTossState() {
+  game.coinTossPhase = null;
+  game.coinTossCall = null;
+  game.coinTossResult = null;
+  game.coinTossWon = null;
+  game.coinTossCpuChoice = null;
+  game.coinTossFlipTimer = 0;
+}
+
+/** Player won toss — start on offense or defense. */
+function startPlayFromUserCoinChoice(side) {
+  if (!game.playUserTeamId || !game.playCpuTeamId) return;
+  if (side !== "offense" && side !== "defense") return;
+  if (side === "offense") startPlayModeDrive();
+  else startDefenseModeDrive();
+  resetCoinTossState();
+}
+
+/** Player lost toss — CPU already chose offense or defense; begin play. */
+function startPlayAfterCpuCoinChoice() {
+  if (!game.playUserTeamId || !game.playCpuTeamId || !game.coinTossCpuChoice) return;
+  if (game.coinTossCpuChoice === "offense") startDefenseModeDrive();
+  else startPlayModeDrive();
+  resetCoinTossState();
+}
+
+function backFromCoinTossToOpponentReveal() {
+  game.state = "playOpponentReveal";
+  resetCoinTossState();
+}
+
+/** Back from matchup to team picker (same teams can be re-rolled on Continue). */
+function backFromOpponentRevealToTeamSelect() {
+  game.state = "playTeamSelect";
+  game.playUserTeamId = null;
+  game.playCpuTeamId = null;
 }
 
 function startDefenseMode() {
@@ -2613,7 +2758,11 @@ function updateInterceptionPopup(dt) {
 }
 
 function update(dt) {
-  if (game.state === "menu" || game.state === "pauseMenu" || game.state === "playModeDowned" || game.state === "playModePlaySelect" || game.state === "defenseModeSelect") {
+  if (game.state === "playCoinToss") {
+    updateCoinToss(dt);
+    return;
+  }
+  if (game.state === "menu" || game.state === "playTeamSelect" || game.state === "playOpponentReveal" || game.state === "pauseMenu" || game.state === "playModeDowned" || game.state === "playModePlaySelect" || game.state === "defenseModeSelect") {
     return;
   }
   if (game.state === "prePlayCadence") {
