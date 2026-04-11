@@ -14,15 +14,15 @@ const FIELD = {
 
 // Menu button layout (canvas coordinates) for hit testing
 const MENU_BUTTONS = {
-  playMode: { x: 360, y: 300, w: 240, h: 46 },
-  defenseMode: { x: 360, y: 366, w: 240, h: 46 }
+  playMode: { x: 360, y: 320, w: 240, h: 52 }
 };
 
 // Pause overlay menu (shown when Escape is pressed during a game)
 const PAUSE_MENU_BUTTONS = {
-  resume:   { x: 330, y: 240, w: 300, h: 56 },
-  modeRestart: { x: 330, y: 320, w: 300, h: 56 },
-  home:     { x: 330, y: 400, w: 300, h: 56 }
+  resume: { x: 330, y: 176, w: 300, h: 48 },
+  instantReplay: { x: 330, y: 232, w: 300, h: 48 },
+  modeRestart: { x: 330, y: 292, w: 300, h: 52 },
+  home: { x: 330, y: 354, w: 300, h: 52 }
 };
 
 // Play Mode — 4 plays per page; optional filter (all / run / pass) on the play sheet
@@ -264,7 +264,7 @@ const COLORS = {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // "menu" | "playTeamSelect" | "playOpponentReveal" | "playCoinToss" | "playing" | ... | "playModePlaySelect" | "defenseModeSelect" | "prePlayCadence" | "touchdownPopup" | "winPopup" | "interceptionPopup"
+  state: "menu", // ... | "instantReplay" | "touchdownPopup" | "winPopup" | "interceptionPopup"
   coinTossPhase: null, // null | "pickCall" | "flipping" | "result" | "userChooseSide" | "cpuChose"
   coinTossCall: null, // null | "heads" | "tails" — player's call before the flip
   coinTossResult: null, // null | "heads" | "tails"
@@ -293,6 +293,10 @@ const game = {
   playModeCurrentPlay: null,
   playModeSweepHandoffT: 0,
   touchdownPopupTimer: 0,
+  lastTouchdownTeamName: "",
+  fieldCelebrationTimer: 0,
+  fieldCelebrationType: null,
+  fieldCelebrationX: 0,
   winPopupTimer: 0,
   safetyPopupTimer: 0,
   afterTouchdownAction: null,
@@ -320,7 +324,8 @@ const game = {
   playModePlayFilter: null,     // null = all plays | "run" | "pass"
   prePlayCadenceIndex: 0,
   prePlayCadenceTimer: 0,
-  defenseModeDefenseFilter: null, // null = all | "run" | "pass"
+  defenseModeDefenseFilter: null, // null = all | "run" | "pass" (CPU offense / pick defense)
+  cpuOffense: false, // true = you defend, CPU runs offense (same flow as former "Defense mode")
   defenseModeControlledPlayerId: "player2",
   defenseModeCpuPlay: null,
   defenseModeSelectedOffensePlay: "random",
@@ -329,7 +334,15 @@ const game = {
   touchMoveY: 0,
   touchStickActive: false,
   touchStickKnobX: 0,
-  touchStickKnobY: 0
+  touchStickKnobY: 0,
+  lastPlayReplayFrames: null,
+  replayFrames: null,
+  replayTimeMs: 0,
+  replayPaused: false,
+  replayZoom: 1,
+  replaySpeed: 1,
+  instantReplayKind: null,
+  instantReplayOnComplete: null
 };
 
 const keys = {};
@@ -449,4 +462,3 @@ const lilTunnelPete = {
   color: "#c8a97e",  // tan
   ballAccent: "#fef08a"
 };
-

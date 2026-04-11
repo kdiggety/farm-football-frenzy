@@ -109,20 +109,21 @@ const TEAMS = {
 
 /** Hit targets for team selection screen (canvas coords). Four cards in a 2×2 grid. */
 function getTeamSelectLayout() {
-  const cardW = 280;
-  const cardH = 158;
-  const gap = 22;
+  const cardW = 322;
+  const cardH = 198;
+  const gap = 36;
+  const rowGap = 11;
   const pairW = cardW * 2 + gap;
   const leftX = (canvas.width - pairW) / 2;
-  const y1 = 128;
-  const y2 = y1 + cardH + 20;
+  const y1 = 70;
+  const y2 = y1 + cardH + rowGap;
   return {
     noFlyZone: { x: leftX, y: y1, w: cardW, h: cardH },
     pasture: { x: leftX + cardW + gap, y: y1, w: cardW, h: cardH },
     barnaby: { x: leftX, y: y2, w: cardW, h: cardH },
     professorPig: { x: leftX + cardW + gap, y: y2, w: cardW, h: cardH },
-    start: { x: canvas.width / 2 - 130, y: 476, w: 260, h: 50 },
-    back: { x: 24, y: 24, w: 100, h: 36 }
+    start: { x: canvas.width / 2 - 130, y: 478, w: 260, h: 50 },
+    back: { x: 24, y: 24, w: 118, h: 36 }
   };
 }
 

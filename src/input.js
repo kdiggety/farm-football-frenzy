@@ -17,7 +17,7 @@ function getCanvasCoords(e) {
 }
 
 function isPauseableState(state) {
-  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence", "interceptionPopup"].includes(state);
+  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup"].includes(state);
 }
 
 function togglePauseMenu() {
@@ -78,13 +78,40 @@ function handleCanvasTap(p) {
   game.mouseX = p.x;
   game.mouseY = p.y;
 
+  if (game.state === "instantReplay") {
+    const L = getInstantReplayLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.skip) || hit(L.done)) {
+      skipInstantReplay();
+      return;
+    }
+    if (hit(L.pause)) {
+      game.replayPaused = !game.replayPaused;
+      return;
+    }
+    if (hit(L.zoomOut)) {
+      replayAdjustZoom(-0.18);
+      return;
+    }
+    if (hit(L.zoomIn)) {
+      replayAdjustZoom(0.18);
+      return;
+    }
+    if (hit(L.rewind)) {
+      rewindInstantReplay();
+      return;
+    }
+    return;
+  }
+
   if (game.interceptionPopupTimer > 0) return;
 
   if (game.state === "playCoinToss") {
     const L = getCoinTossLayout();
     const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
     if (hit(L.back)) {
-      backFromCoinTossToOpponentReveal();
+      resetCoinTossState();
+      returnToHomeMenu();
       return;
     }
     if (game.coinTossPhase === "pickCall") {
@@ -153,7 +180,6 @@ function handleCanvasTap(p) {
     game.state !== "pauseMenu" &&
     isPauseableState(game.state) &&
     game.state !== "playModePlaySelect" &&
-    game.state !== "defenseModeSelect" &&
     game.state !== "playOpponentReveal" &&
     game.state !== "playCoinToss"
   ) {
@@ -166,19 +192,15 @@ function handleCanvasTap(p) {
 
   if (game.state === "menu") {
     const pl = MENU_BUTTONS.playMode;
-    const def = MENU_BUTTONS.defenseMode;
     if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
       startPlayMode();
-      return;
-    }
-    if (p.x >= def.x && p.x <= def.x + def.w && p.y >= def.y && p.y <= def.y + def.h) {
-      startDefenseMode();
       return;
     }
     return;
   }
   if (game.state === "pauseMenu") {
     const res = PAUSE_MENU_BUTTONS.resume;
+    const rep = PAUSE_MENU_BUTTONS.instantReplay;
     const modeBtn = PAUSE_MENU_BUTTONS.modeRestart;
     const home = PAUSE_MENU_BUTTONS.home;
     if (p.x >= res.x && p.x <= res.x + res.w && p.y >= res.y && p.y <= res.y + res.h) {
@@ -186,12 +208,19 @@ function handleCanvasTap(p) {
       game.stateBeforePauseMenu = null;
       return;
     }
+    if (
+      p.x >= rep.x &&
+      p.x <= rep.x + rep.w &&
+      p.y >= rep.y &&
+      p.y <= rep.y + rep.h &&
+      typeof replayHasLastPlay === "function" &&
+      replayHasLastPlay()
+    ) {
+      openReplayFromPauseMenu();
+      return;
+    }
     if (p.x >= modeBtn.x && p.x <= modeBtn.x + modeBtn.w && p.y >= modeBtn.y && p.y <= modeBtn.y + modeBtn.h) {
-      if (game.mode === "defense") {
-        startDefenseMode();
-      } else {
-        startPlayMode();
-      }
+      startPlayMode();
       game.stateBeforePauseMenu = null;
       return;
     }
@@ -217,15 +246,8 @@ function handleCanvasTap(p) {
       game.winner = player2;
       return;
     }
-    if (game.mode === "defense") {
-      advanceDefenseModeDown(game.playModeDownedSpot);
-    } else {
-      if (game.playModeDown >= game.playModeMaxDowns) {
-        game.state = "gameOver";
-        game.winner = null;
-      } else {
-        advancePlayModeDown(game.playModeDownedSpot);
-      }
+    if (game.mode === "play") {
+      advancePlayModeDown(game.playModeDownedSpot);
     }
     return;
   }
@@ -237,9 +259,11 @@ function handleCanvasTap(p) {
       const restart = getMobileRestartButtonRect();
       if (p.x >= restart.x && p.x <= restart.x + restart.w && p.y >= restart.y && p.y <= restart.y + restart.h) {
         if (game.mode === "play") {
-          startPlayModeDrive();
-        } else if (game.mode === "defense") {
-          startDefenseMode();
+          if (game.cpuOffense) {
+            startPlayModeDriveCpuOffense();
+          } else {
+            startPlayModeDrive();
+          }
         } else {
           restartGame();
         }
@@ -249,6 +273,35 @@ function handleCanvasTap(p) {
     return;
   }
   if (game.state === "playModePlaySelect") {
+    if (game.cpuOffense) {
+      const filt = getDefenseSelectFilterBarRects();
+      const options = getDefenseSelectOptionRects();
+      const offenseToggle = getDefenseSelectOffenseToggleRect();
+      if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
+        game.defenseModeDefenseFilter = null;
+        return;
+      }
+      if (p.x >= filt.run.x && p.x <= filt.run.x + filt.run.w && p.y >= filt.run.y && p.y <= filt.run.y + filt.run.h) {
+        game.defenseModeDefenseFilter = "run";
+        return;
+      }
+      if (p.x >= filt.pass.x && p.x <= filt.pass.x + filt.pass.w && p.y >= filt.pass.y && p.y <= filt.pass.y + filt.pass.h) {
+        game.defenseModeDefenseFilter = "pass";
+        return;
+      }
+      for (const key of Object.keys(options)) {
+        const rect = options[key];
+        if (p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h) {
+          beginSelectedDefense(key);
+          return;
+        }
+      }
+      if (p.x >= offenseToggle.x && p.x <= offenseToggle.x + offenseToggle.w && p.y >= offenseToggle.y && p.y <= offenseToggle.y + offenseToggle.h) {
+        cycleDefenseModeOffensePlay();
+        return;
+      }
+      return;
+    }
     const filt = getPlaySelectFilterBarRects();
     if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
       setPlayModePlayFilter(null);
@@ -293,35 +346,7 @@ function handleCanvasTap(p) {
     }
     return;
   }
-  if (game.state === "defenseModeSelect") {
-    const filt = getDefenseSelectFilterBarRects();
-    const options = getDefenseSelectOptionRects();
-    const offenseToggle = getDefenseSelectOffenseToggleRect();
-    if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
-      game.defenseModeDefenseFilter = null;
-      return;
-    }
-    if (p.x >= filt.run.x && p.x <= filt.run.x + filt.run.w && p.y >= filt.run.y && p.y <= filt.run.y + filt.run.h) {
-      game.defenseModeDefenseFilter = "run";
-      return;
-    }
-    if (p.x >= filt.pass.x && p.x <= filt.pass.x + filt.pass.w && p.y >= filt.pass.y && p.y <= filt.pass.y + filt.pass.h) {
-      game.defenseModeDefenseFilter = "pass";
-      return;
-    }
-    for (const key of Object.keys(options)) {
-      const rect = options[key];
-      if (p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h) {
-        beginSelectedDefense(key);
-        return;
-      }
-    }
-    if (p.x >= offenseToggle.x && p.x <= offenseToggle.x + offenseToggle.w && p.y >= offenseToggle.y && p.y <= offenseToggle.y + offenseToggle.h) {
-      cycleDefenseModeOffensePlay();
-      return;
-    }
-  }
-  if (game.touchControlsEnabled && ["playing", "prePlayCadence"].includes(game.state) && game.mode === "defense") {
+  if (game.touchControlsEnabled && ["playing", "prePlayCadence"].includes(game.state) && game.cpuOffense) {
     const sw = getMobileSwitchButtonRect();
     if (p.x >= sw.x && p.x <= sw.x + sw.w && p.y >= sw.y && p.y <= sw.y + sw.h) {
       cycleDefenseControlledPlayer();
@@ -405,6 +430,45 @@ window.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   keys[key] = true;
 
+  if (game.state === "instantReplay") {
+    if (key === "escape" || key === "enter") {
+      e.preventDefault();
+      skipInstantReplay();
+      return;
+    }
+    if (key === " ") {
+      e.preventDefault();
+      skipInstantReplay();
+      return;
+    }
+    if (key === "p") {
+      e.preventDefault();
+      game.replayPaused = !game.replayPaused;
+      return;
+    }
+    if (key === "+" || key === "=") {
+      e.preventDefault();
+      replayAdjustZoom(0.18);
+      return;
+    }
+    if (key === "-" || key === "_") {
+      e.preventDefault();
+      replayAdjustZoom(-0.18);
+      return;
+    }
+    if (key === "r") {
+      e.preventDefault();
+      rewindInstantReplay();
+      return;
+    }
+    if (key === "arrowleft") {
+      e.preventDefault();
+      rewindInstantReplay();
+      return;
+    }
+    return;
+  }
+
   if (game.interceptionPopupTimer > 0) return;
 
   if (game.state === "playCoinToss") {
@@ -455,9 +519,11 @@ window.addEventListener("keydown", (e) => {
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
       if (game.playUserTeamId) resetPlayModeTeamScores();
-      startPlayModeDrive();
-    } else if (game.mode === "defense") {
-      startDefenseMode();
+      if (game.cpuOffense) {
+        startPlayModeDriveCpuOffense();
+      } else {
+        startPlayModeDrive();
+      }
     } else {
       restartGame();
     }
@@ -467,32 +533,30 @@ window.addEventListener("keydown", (e) => {
       game.winner = player2;
       return;
     }
-    if (game.mode === "defense") {
-      advanceDefenseModeDown(game.playModeDownedSpot);
-    } else {
-      if (game.playModeDown >= game.playModeMaxDowns) {
-        game.state = "gameOver";
-        game.winner = null;
-      } else {
-        advancePlayModeDown(game.playModeDownedSpot);
-      }
+    if (game.mode === "play") {
+      advancePlayModeDown(game.playModeDownedSpot);
     }
-  } else if (key === " " && game.mode === "defense" && ["playing", "prePlayCadence"].includes(game.state)) {
+  } else if (key === " " && game.cpuOffense && ["playing", "prePlayCadence"].includes(game.state)) {
     cycleDefenseControlledPlayer();
-  } else if (key === "a" && game.state === "playModePlaySelect") {
+  } else if (key === "a" && game.state === "playModePlaySelect" && !game.cpuOffense) {
     setPlayModePlayFilter(null);
-  } else if (key === "r" && game.state === "playModePlaySelect") {
+  } else if (key === "r" && game.state === "playModePlaySelect" && !game.cpuOffense) {
     setPlayModePlayFilter("run");
-  } else if (key === "p" && game.state === "playModePlaySelect") {
+  } else if (key === "p" && game.state === "playModePlaySelect" && !game.cpuOffense) {
     setPlayModePlayFilter("pass");
-  } else if ((key === "enter" || key === " ") && game.state === "playModePlaySelect") {
+  } else if ((key === "enter" || key === " ") && game.state === "playModePlaySelect" && !game.cpuOffense) {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
     if (slots[0]) beginSelectedPlay(slots[0].key);
-  } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
+  } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect" && !game.cpuOffense) {
     const slots = getPlaySelectSlots(game.playModePlaySelectPage);
     const idx = parseInt(key, 10) - 1;
     if (slots[idx]) beginSelectedPlay(slots[idx].key);
-  } else if ((key === "arrowleft" || key === "arrowright") && game.state === "playModePlaySelect") {
+  } else if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect" && game.cpuOffense) {
+    const order = getFilteredDefenseOptionOrder();
+    const idx = parseInt(key, 10) - 1;
+    const defKey = order[idx];
+    if (defKey) beginSelectedDefense(defKey);
+  } else if ((key === "arrowleft" || key === "arrowright") && game.state === "playModePlaySelect" && !game.cpuOffense) {
     const pages = getPlaySelectPageCount();
     if (pages > 1) {
       if (key === "arrowleft") {
@@ -506,7 +570,7 @@ window.addEventListener("keydown", (e) => {
   if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
     e.preventDefault();
   }
-  if ((key === "a" || key === "r" || key === "p") && game.state === "playModePlaySelect") {
+  if ((key === "a" || key === "r" || key === "p") && game.state === "playModePlaySelect" && !game.cpuOffense) {
     e.preventDefault();
   }
   if (key === "escape") {
@@ -519,7 +583,7 @@ window.addEventListener("keydown", (e) => {
     } else if (game.state === "pauseMenu") {
       game.state = game.stateBeforePauseMenu;
       game.stateBeforePauseMenu = null;
-    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(game.state)) {
+    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup"].includes(game.state)) {
       game.stateBeforePauseMenu = game.state;
       game.state = "pauseMenu";
     }
@@ -550,7 +614,7 @@ function updatePlayerInput(dt) {
   dx /= len;
   dy /= len;
 
-  if (game.mode === "defense") {
+  if (game.cpuOffense) {
     const defender = getDefenseControlledPlayer();
     defender.x += dx * defender.speed * dt;
     defender.y += dy * defender.speed * dt;

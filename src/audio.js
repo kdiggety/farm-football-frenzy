@@ -187,3 +187,74 @@ function playTouchdownAudio(scorer) {
     }
   }, 600);
 }
+
+/** Urgent "breaking news" style tones when the pass is picked. */
+function playInterceptionAlertAudio() {
+  resumeAudio();
+  const now = audioCtx.currentTime;
+  [0, 0.12, 0.24].forEach((t, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(i % 2 === 0 ? 880 : 660, now + t);
+    gain.gain.setValueAtTime(0.2, now + t);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.1);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + t);
+    osc.stop(now + t + 0.11);
+  });
+}
+
+function playMudThudAudio() {
+  resumeAudio();
+  const now = audioCtx.currentTime;
+  const bufferSize = audioCtx.sampleRate * 0.15;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+  }
+  const src = audioCtx.createBufferSource();
+  const filter = audioCtx.createBiquadFilter();
+  const gain = audioCtx.createGain();
+  filter.type = "lowpass";
+  filter.frequency.value = 280;
+  gain.gain.setValueAtTime(0.45, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  src.buffer = buffer;
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  src.start(now);
+}
+
+/** Bee buzz + mic squeal for sack celebration. */
+function playSackBuzzAudio() {
+  resumeAudio();
+  const now = audioCtx.currentTime;
+  const buzz = audioCtx.createOscillator();
+  const bg = audioCtx.createGain();
+  buzz.type = "sawtooth";
+  buzz.frequency.setValueAtTime(110, now);
+  buzz.frequency.linearRampToValueAtTime(95, now + 0.35);
+  bg.gain.setValueAtTime(0.12, now);
+  bg.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  buzz.connect(bg);
+  bg.connect(audioCtx.destination);
+  buzz.start(now);
+  buzz.stop(now + 0.42);
+
+  const squeal = audioCtx.createOscillator();
+  const sg = audioCtx.createGain();
+  squeal.type = "sine";
+  squeal.frequency.setValueAtTime(2400, now + 0.05);
+  squeal.frequency.exponentialRampToValueAtTime(400, now + 0.2);
+  sg.gain.setValueAtTime(0, now + 0.05);
+  sg.gain.linearRampToValueAtTime(0.18, now + 0.08);
+  sg.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+  squeal.connect(sg);
+  sg.connect(audioCtx.destination);
+  squeal.start(now + 0.05);
+  squeal.stop(now + 0.25);
+}

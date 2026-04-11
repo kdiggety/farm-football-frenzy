@@ -259,7 +259,7 @@ function getDefenseControlledPlayer() {
 }
 
 function isDefenseControlledPlayer(player) {
-  return game.mode === "defense" && getDefenseControlledPlayer() === player;
+  return game.cpuOffense && getDefenseControlledPlayer() === player;
 }
 
 function cycleDefenseControlledPlayer() {
@@ -461,7 +461,7 @@ function getScoringTeamForPlayer(player) {
 
 function startTurnoverDefenseSeries(fromX) {
   applyTurnoverFieldRoles();
-  startDefenseModeDrive(fromX);
+  startPlayModeDriveCpuOffense(fromX);
 }
 
 function isDefenderEntity(entity) {
@@ -515,12 +515,21 @@ function handlePassInterception(entity) {
   ball.arcHeight = 0;
   ball.carrier = entity;
   game.passPlayTargetReceiver = null;
-  game.interceptionPopupTimer = 2000;
-  if (game.mode === "defense") {
-    game.defenseModeControlledPlayerId = getDefenseControlIdForEntity(entity);
+  replayFinalizePlayBuffer();
+  const commitInterception = () => {
+    game.interceptionPopupTimer = 2000;
+    if (game.cpuOffense) {
+      game.defenseModeControlledPlayerId = getDefenseControlIdForEntity(entity);
+    }
+    game.state = "interceptionPopup";
+    updateBallPosition();
+    playInterceptionAlertAudio();
+  };
+  if (game.mode === "play" && replayHasLastPlay()) {
+    beginInstantReplay({ kind: "interception", onComplete: commitInterception });
+    return;
   }
-  game.state = "interceptionPopup";
-  updateBallPosition();
+  commitInterception();
 }
 
 function resolveArcingPassFlight(dt, moveReceivers) {
@@ -593,7 +602,7 @@ function updateInterceptionReturn(dt) {
   const leftEndZoneRight = FIELD.x + FIELD.endZoneWidth;
   updatePlayerInput(dt);
 
-  const controlledCarrier = game.mode === "defense" && isDefenseControlledPlayer(carrier);
+  const controlledCarrier = game.cpuOffense && isDefenseControlledPlayer(carrier);
   if (!controlledCarrier) {
     moveToward(carrier, FIELD.x + 20, FIELD.y + FIELD.height / 2, carrier.speed, dt);
     clampPlayerToField(carrier);
@@ -611,7 +620,7 @@ function updateInterceptionReturn(dt) {
     moveDefensePlayer(cluckNorris, carrier.x + 24, carrier.y - 28, cluckNorris.speed * 0.92, dt);
   }
 
-  moveOffensePursuitToCarrier(carrier, dt, game.mode === "defense");
+  moveOffensePursuitToCarrier(carrier, dt, game.cpuOffense);
   updateBallPosition();
 
   if (carrier.x <= leftEndZoneRight) {
@@ -641,9 +650,13 @@ function returnToHomeMenu() {
   game.state = "menu";
   game.stateBeforePauseMenu = null;
   game.mode = null;
+  game.cpuOffense = false;
   game.winner = null;
   game.scorePauseTimer = 0;
   game.touchdownPopupTimer = 0;
+  game.lastTouchdownTeamName = "";
+  game.fieldCelebrationTimer = 0;
+  game.fieldCelebrationType = null;
   game.winPopupTimer = 0;
   game.safetyPopupTimer = 0;
   game.interceptionPopupTimer = 0;
@@ -654,10 +667,17 @@ function returnToHomeMenu() {
   game.touchMoveX = 0;
   game.touchMoveY = 0;
   game.touchStickActive = false;
+  game.lastPlayReplayFrames = null;
+  game.replayFrames = null;
   startMenuMusic();
 }
 
-function finishDriveTouchdown(scorer) {
+function finishDriveTouchdownCommit(scorer) {
+  if (game.playUserTeamId && scorer.teamTag && TEAMS[scorer.teamTag]) {
+    game.lastTouchdownTeamName = TEAMS[scorer.teamTag].name;
+  } else {
+    game.lastTouchdownTeamName = getScoringTeamForPlayer(scorer) === player1 ? "Barnaby" : "Professor Pig";
+  }
   if (game.playUserTeamId && scorer.teamTag) {
     if (!game.teamScores) resetPlayModeTeamScores();
     game.teamScores[scorer.teamTag]++;
@@ -681,7 +701,7 @@ function finishDriveTouchdown(scorer) {
 
   const scoringTeam = getScoringTeamForPlayer(scorer);
   scoringTeam.score += 1;
-  if (game.mode === "defense") {
+  if (game.cpuOffense) {
     game.state = "gameOver";
     game.winner = scoringTeam;
     playTouchdownAudio(scorer);
@@ -706,6 +726,16 @@ function finishDriveTouchdown(scorer) {
   playTouchdownAudio(scorer);
 }
 
+function finishDriveTouchdown(scorer) {
+  replayFinalizePlayBuffer();
+  const runCommit = () => finishDriveTouchdownCommit(scorer);
+  if (game.mode === "play" && replayHasLastPlay()) {
+    beginInstantReplay({ kind: "touchdown", onComplete: runCommit });
+    return;
+  }
+  runCommit();
+}
+
 function chooseDefenseModeCpuPlay() {
   if (game.defenseModeSelectedOffensePlay && game.defenseModeSelectedOffensePlay !== "random") {
     return game.defenseModeSelectedOffensePlay;
@@ -723,14 +753,14 @@ function cycleDefenseModeOffensePlay() {
 }
 
 function prepareDefenseModeCpuPass(playKey) {
-  if (game.mode !== "defense") return;
+  if (!game.cpuOffense) return;
   game.defenseModeCpuPlay = playKey;
   game.defenseModeCpuThrowTimer = 520 + Math.random() * 420;
   game.passPlayTargetReceiver = Math.random() < 0.5 ? "horse" : "pete";
 }
 
 function maybeRunDefenseModeCpuPass(playKey, dt) {
-  if (game.mode !== "defense" || !game.passPlayDropbackDone || !game.passPlayCanThrow) {
+  if (!game.cpuOffense || !game.passPlayDropbackDone || !game.passPlayCanThrow) {
     return false;
   }
 
@@ -790,6 +820,7 @@ function positionForPlayModeAt(x) {
 function startPlayModeDrive(fromX) {
   const startX = fromX !== undefined ? fromX : getLeftTwentyYardLineX();
   game.turnoverSeriesActive = false;
+  game.cpuOffense = false;
   if (game.playUserTeamId && game.playCpuTeamId) {
     applyPlayModeTeamLayout(game.playUserTeamId, game.playCpuTeamId);
   } else {
@@ -807,16 +838,18 @@ function startPlayModeDrive(fromX) {
   positionForPlayModeAt(startX);
 }
 
-function startDefenseModeDrive(fromX) {
+/** CPU offense / player defense — former standalone "Defense mode", now under Play. */
+function startPlayModeDriveCpuOffense(fromX) {
   const startX = fromX !== undefined ? fromX : getLeftTwentyYardLineX();
   game.turnoverSeriesActive = false;
+  game.cpuOffense = true;
   if (game.playUserTeamId && game.playCpuTeamId) {
     applyPlayModeTeamLayout(game.playCpuTeamId, game.playUserTeamId);
   } else {
     applyDefaultFieldRoles();
   }
-  game.mode = "defense";
-  game.state = "defenseModeSelect";
+  game.mode = "play";
+  game.state = "playModePlaySelect";
   game.interceptionPopupTimer = 0;
   game.playModeDown = 1;
   game.playModeLineX = startX;
@@ -838,6 +871,34 @@ function setPlayModePlayFilter(filter) {
 }
 
 function advancePlayModeDown(newLineX) {
+  if (game.cpuOffense) {
+    if (game.playModeTackle && newLineX <= FIELD.x + FIELD.endZoneWidth) {
+      game.state = "gameOver";
+      game.winner = player2;
+      game.playModeTackle = false;
+      return;
+    }
+    game.playModeTackle = false;
+    if (game.playModeDown >= game.playModeMaxDowns) {
+      if (game.turnoverSeriesActive) {
+        startPlayModeDrive(newLineX);
+      } else {
+        game.state = "gameOver";
+        game.winner = player2;
+      }
+      return;
+    }
+    game.playModeDown += 1;
+    game.playModeLineX = newLineX;
+    game.playModePhase = null;
+    game.playModeCurrentPlay = null;
+    game.passPlayTargetReceiver = null;
+    game.defenseModeCpuPlay = null;
+    positionForPlayModeAt(newLineX);
+    game.state = "playModePlaySelect";
+    return;
+  }
+
   // Tackled by the CPU inside the pig's end zone = Safety
   if (game.playModeTackle && newLineX <= FIELD.x + FIELD.endZoneWidth) {
     game.state = "safetyPopup";
@@ -858,33 +919,6 @@ function advancePlayModeDown(newLineX) {
   positionForPlayModeAt(newLineX);
   game.playModePlaySelectPage = 0;
   game.state = "playModePlaySelect";
-}
-
-function advanceDefenseModeDown(newLineX) {
-  if (game.playModeTackle && newLineX <= FIELD.x + FIELD.endZoneWidth) {
-    game.state = "gameOver";
-    game.winner = player2;
-    game.playModeTackle = false;
-    return;
-  }
-  game.playModeTackle = false;
-  if (game.playModeDown >= game.playModeMaxDowns) {
-    if (game.turnoverSeriesActive) {
-      startPlayModeDrive(newLineX);
-    } else {
-      game.state = "gameOver";
-      game.winner = player2;
-    }
-    return;
-  }
-  game.playModeDown += 1;
-  game.playModeLineX = newLineX;
-  game.playModePhase = null;
-  game.playModeCurrentPlay = null;
-  game.passPlayTargetReceiver = null;
-  game.defenseModeCpuPlay = null;
-  positionForPlayModeAt(newLineX);
-  game.state = "defenseModeSelect";
 }
 
 function positionForSweepRight() {
@@ -1209,7 +1243,7 @@ function updatePlayModeDiveRight(dt) {
 
   if (game.playModePhase === "run") {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, FIELD.y + FIELD.height * 0.7);
     } else {
       clampPlayerToField(allyHorse);
@@ -1370,6 +1404,7 @@ function updatePrePlayCadence(dt) {
 
   game.prePlayCadenceTimer = 0;
   game.state = "playing";
+  replayStartRecording();
 }
 
 function updatePlayModeDiveLeft(dt) {
@@ -1424,7 +1459,7 @@ function updatePlayModeDiveLeft(dt) {
 
   if (game.playModePhase === "run") {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, FIELD.y + FIELD.height * 0.3);
     } else {
       clampPlayerToField(allyHorse);
@@ -1455,6 +1490,7 @@ function startPlayMode() {
   game.playUserTeamId = null;
   game.playCpuTeamId = null;
   game.teamScores = null;
+  game.cpuOffense = false;
   startGameMusic();
   game.state = "playTeamSelect";
 }
@@ -1493,7 +1529,8 @@ function beginCoinTossFlip(call) {
   game.coinTossCall = call;
   game.coinTossPhase = "flipping";
   game.coinTossFlipTimer = 1500;
-  game.coinTossResult = Math.random() < 0.5 ? "heads" : "tails";
+  // 50/50 heads vs tails
+  game.coinTossResult = Math.floor(Math.random() * 2) === 0 ? "heads" : "tails";
 }
 
 function updateCoinToss(dt) {
@@ -1513,7 +1550,7 @@ function continueFromCoinTossResult() {
     game.coinTossPhase = "userChooseSide";
     return;
   }
-  game.coinTossCpuChoice = Math.random() < 0.5 ? "offense" : "defense";
+  game.coinTossCpuChoice = Math.floor(Math.random() * 2) === 0 ? "offense" : "defense";
   game.coinTossPhase = "cpuChose";
 }
 
@@ -1531,14 +1568,14 @@ function startPlayFromUserCoinChoice(side) {
   if (!game.playUserTeamId || !game.playCpuTeamId) return;
   if (side !== "offense" && side !== "defense") return;
   if (side === "offense") startPlayModeDrive();
-  else startDefenseModeDrive();
+  else startPlayModeDriveCpuOffense();
   resetCoinTossState();
 }
 
 /** Player lost toss — CPU already chose offense or defense; begin play. */
 function startPlayAfterCpuCoinChoice() {
   if (!game.playUserTeamId || !game.playCpuTeamId || !game.coinTossCpuChoice) return;
-  if (game.coinTossCpuChoice === "offense") startDefenseModeDrive();
+  if (game.coinTossCpuChoice === "offense") startPlayModeDriveCpuOffense();
   else startPlayModeDrive();
   resetCoinTossState();
 }
@@ -1553,17 +1590,6 @@ function backFromOpponentRevealToTeamSelect() {
   game.state = "playTeamSelect";
   game.playUserTeamId = null;
   game.playCpuTeamId = null;
-}
-
-function startDefenseMode() {
-  applyDefaultFieldRoles();
-  player1.score = 0;
-  player2.score = 0;
-  game.winner = null;
-  game.scorePauseTimer = 0;
-  game.scoredBy = null;
-  startGameMusic();
-  startDefenseModeDrive();
 }
 
 // =========================================================
@@ -1747,8 +1773,11 @@ function resolveCharacterCollisions() {
 }
 
 function updatePlaying(dt) {
-  if (game.mode === "play" || game.mode === "defense") {
+  if (game.mode === "play") {
     updatePlayMode(dt);
+    if (game.state === "playing") {
+      replayPushSnapshot();
+    }
     return;
   }
   if (game.mode === "passing" && ball.inFlight) {
@@ -1804,6 +1833,7 @@ function updatePlaying(dt) {
 // Call this instead of manually setting game.state = "playModeDowned".
 // Captures yards / play type before they are cleared.
 function setPlayDowned(downedX, { tackle = false, incomplete = false, sack = false, interception = false } = {}) {
+  replayFinalizePlayBuffer();
   const playType = game.playModeCurrentPlay;
   const rawYards = (downedX - game.playModeLineX) / YARDS_TO_PIXELS;
   const yards    = (incomplete || interception) ? 0 : Math.round(rawYards);
@@ -1827,6 +1857,21 @@ function setPlayDowned(downedX, { tackle = false, incomplete = false, sack = fal
   game.playModePhase      = null;
   game.playModeCurrentPlay = null;
   game.passPlayTargetReceiver = null;
+
+  if (resultType === "loss") {
+    game.fieldCelebrationTimer = 2800;
+    game.fieldCelebrationType = "mud";
+    game.fieldCelebrationX = game.playModeDownedSpot;
+    playMudThudAudio();
+  } else if (resultType === "sack") {
+    game.fieldCelebrationTimer = 2800;
+    game.fieldCelebrationType = "sack";
+    game.fieldCelebrationX = downedX;
+    playSackBuzzAudio();
+  } else {
+    game.fieldCelebrationTimer = 0;
+    game.fieldCelebrationType = null;
+  }
 }
 
 function updatePlayMode(dt) {
@@ -2009,7 +2054,7 @@ function updatePlayModeSweepRight(dt) {
   }
   if (game.playModePhase === "sweep") {
     updatePlayerInput(dt);
-    if (game.mode === "defense" && ball.carrier === allyHorse) {
+    if (game.cpuOffense && ball.carrier === allyHorse) {
       moveCpuOffenseCarrier(allyHorse, dt, FIELD.y + FIELD.height * 0.82);
     }
     moveQuarterbackRunBlock(allyHorse, dt);
@@ -2108,7 +2153,7 @@ function updatePlayModeSweepLeft(dt) {
   }
   if (game.playModePhase === "sweep") {
     updatePlayerInput(dt);
-    if (game.mode === "defense" && ball.carrier === allyHorse) {
+    if (game.cpuOffense && ball.carrier === allyHorse) {
       moveCpuOffenseCarrier(allyHorse, dt, FIELD.y + FIELD.height * 0.18);
     }
     moveQuarterbackRunBlock(allyHorse, dt);
@@ -2306,7 +2351,7 @@ function updatePlayModePassRight(dt) {
     } else {
       // ── Phase 2: Player has full control ──
       updatePlayerInput(dt);
-      if (game.mode !== "defense") {
+      if (!game.cpuOffense) {
         clampPlayerToField(player1);
       }
       if (hasCrossedLineOfScrimmage(player1.x)) {
@@ -2357,7 +2402,7 @@ function updatePlayModePassRight(dt) {
 
   if (ball.carrier === allyHorse) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, allyHorse.y);
     }
     moveDefenseTeamToward(allyHorse.x, allyHorse.y, dt);
@@ -2375,7 +2420,7 @@ function updatePlayModePassRight(dt) {
 
   if (ball.carrier === lilTunnelPete) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(lilTunnelPete, dt, lilTunnelPete.y);
     }
     moveDefenseTeamToward(lilTunnelPete.x, lilTunnelPete.y, dt);
@@ -2414,7 +2459,7 @@ function updatePlayModePassLeft(dt) {
     } else {
       // ── Phase 2: Player has full control ──
       updatePlayerInput(dt);
-      if (game.mode !== "defense") {
+      if (!game.cpuOffense) {
         clampPlayerToField(player1);
       }
       if (hasCrossedLineOfScrimmage(player1.x)) {
@@ -2465,7 +2510,7 @@ function updatePlayModePassLeft(dt) {
 
   if (ball.carrier === allyHorse) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, allyHorse.y);
     }
     moveDefenseTeamToward(allyHorse.x, allyHorse.y, dt);
@@ -2483,7 +2528,7 @@ function updatePlayModePassLeft(dt) {
 
   if (ball.carrier === lilTunnelPete) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(lilTunnelPete, dt, lilTunnelPete.y);
     }
     moveDefenseTeamToward(lilTunnelPete.x, lilTunnelPete.y, dt);
@@ -2520,7 +2565,7 @@ function updatePlayModeBarnPlay(dt) {
       clampPlayerToField(player1);
     } else {
       updatePlayerInput(dt);
-      if (game.mode !== "defense") {
+      if (!game.cpuOffense) {
         clampPlayerToField(player1);
       }
       if (hasCrossedLineOfScrimmage(player1.x)) {
@@ -2568,7 +2613,7 @@ function updatePlayModeBarnPlay(dt) {
 
   if (ball.carrier === allyHorse) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, allyHorse.y);
     }
     moveDefenseTeamToward(allyHorse.x, allyHorse.y, dt);
@@ -2586,7 +2631,7 @@ function updatePlayModeBarnPlay(dt) {
 
   if (ball.carrier === lilTunnelPete) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(lilTunnelPete, dt, lilTunnelPete.y);
     }
     moveDefenseTeamToward(lilTunnelPete.x, lilTunnelPete.y, dt);
@@ -2623,7 +2668,7 @@ function updatePlayModeScrambledEggs(dt) {
       clampPlayerToField(player1);
     } else {
       updatePlayerInput(dt);
-      if (game.mode !== "defense") {
+      if (!game.cpuOffense) {
         clampPlayerToField(player1);
       }
       if (hasCrossedLineOfScrimmage(player1.x)) {
@@ -2671,7 +2716,7 @@ function updatePlayModeScrambledEggs(dt) {
 
   if (ball.carrier === allyHorse) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(allyHorse, dt, allyHorse.y);
     }
     moveDefenseTeamToward(allyHorse.x, allyHorse.y, dt);
@@ -2689,7 +2734,7 @@ function updatePlayModeScrambledEggs(dt) {
 
   if (ball.carrier === lilTunnelPete) {
     updatePlayerInput(dt);
-    if (game.mode === "defense") {
+    if (game.cpuOffense) {
       moveCpuOffenseCarrier(lilTunnelPete, dt, lilTunnelPete.y);
     }
     moveDefenseTeamToward(lilTunnelPete.x, lilTunnelPete.y, dt);
@@ -2762,11 +2807,25 @@ function update(dt) {
     updateCoinToss(dt);
     return;
   }
-  if (game.state === "menu" || game.state === "playTeamSelect" || game.state === "playOpponentReveal" || game.state === "pauseMenu" || game.state === "playModeDowned" || game.state === "playModePlaySelect" || game.state === "defenseModeSelect") {
+  if (game.state === "playModeDowned") {
+    if (game.fieldCelebrationTimer > 0) {
+      game.fieldCelebrationTimer -= dt * 1000;
+      if (game.fieldCelebrationTimer <= 0) {
+        game.fieldCelebrationTimer = 0;
+        game.fieldCelebrationType = null;
+      }
+    }
+    return;
+  }
+  if (game.state === "menu" || game.state === "playTeamSelect" || game.state === "playOpponentReveal" || game.state === "pauseMenu" || game.state === "playModePlaySelect") {
     return;
   }
   if (game.state === "prePlayCadence") {
     updatePrePlayCadence(dt);
+    return;
+  }
+  if (game.state === "instantReplay") {
+    updateInstantReplay(dt);
     return;
   }
   if (game.state === "safetyPopup") {

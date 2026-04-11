@@ -11,6 +11,51 @@ for (const id of PLAY_TEAM_IDS) {
   teamBannerImages[id] = im;
 }
 
+const coinHorseHeadImage = new Image();
+coinHorseHeadImage.src = "assets/coin-horse-head.png";
+const coinHorseTailImage = new Image();
+coinHorseTailImage.src = "assets/coin-horse-tail.png";
+
+const announcerFarmerImage = new Image();
+announcerFarmerImage.src = "assets/announcer-commentator-box.png";
+
+/** Translucent plate behind the announcer art so the field/game shows through slightly. */
+function drawAnnouncerTranslucentBackdrop(bx, by, bw, bh, cornerR = 14) {
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.42)";
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(bx, by, bw, bh, cornerR);
+  } else {
+    const r = Math.min(cornerR, bw / 2, bh / 2);
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+    ctx.arcTo(bx, by + bh, bx, by, r);
+    ctx.arcTo(bx, by, bx + bw, by, r);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawAnnouncerPortrait(x, y, height) {
+  const img = announcerFarmerImage;
+  if (!img.complete || !img.naturalWidth) return;
+  const h = height;
+  const w = (img.naturalWidth / img.naturalHeight) * h;
+  const pad = 10;
+  drawAnnouncerTranslucentBackdrop(x - pad, y - pad, w + pad * 2, h + pad * 2, 14);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, x, y, w, h);
+  ctx.restore();
+}
+
 /** Draw team banner with cover fit inside rect (clipped). */
 function drawTeamBannerImage(teamId, x, y, w, h) {
   const img = teamBannerImages[teamId];
@@ -576,206 +621,330 @@ function drawHayBale(x, y) {
   ctx.stroke();
 }
 
-function drawShadow(x, y, radiusX, radiusY) {
-  ctx.fillStyle = COLORS.shadow;
-  ctx.beginPath();
-  ctx.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
-  ctx.fill();
+function drawShadow(x, y, radiusX, radiusY, c = ctx) {
+  c.fillStyle = COLORS.shadow;
+  c.beginPath();
+  c.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
+  c.fill();
 }
 
-function drawPlayer(player) {
+/** Roster previews: 1:1 game-sized draw, then scaled with drawImage (matches field pixels). */
+const TEAM_SELECT_PLAYER_BUFFER = document.createElement("canvas");
+TEAM_SELECT_PLAYER_BUFFER.width = 100;
+TEAM_SELECT_PLAYER_BUFFER.height = 100;
+const TEAM_SELECT_PLAYER_CTX = TEAM_SELECT_PLAYER_BUFFER.getContext("2d");
+const TEAM_SELECT_PREVIEW_CX = 50;
+const TEAM_SELECT_PREVIEW_CY = 54;
+
+function drawPlayer(player, renderCtx) {
+  const c = renderCtx ?? ctx;
   const label = player.displayLabel || player.name;
   const accentText = player.ballAccent || COLORS.white;
   const appearanceId = player.appearanceId || player.id;
-  drawShadow(player.x, player.y + player.radius + 8, player.radius * 0.9, 7);
+  const R = player.radius;
+  const sc = R / 20;
+  drawShadow(player.x, player.y + R + 8 * sc, R * 0.9, 7 * sc, c);
 
   // Body
-  ctx.fillStyle = player.color;
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-  ctx.fill();
+  c.fillStyle = player.color;
+  c.beginPath();
+  c.arc(player.x, player.y, R, 0, Math.PI * 2);
+  c.fill();
 
-  // Ears / snout / unique feature details
+  // Ears / snout / unique feature details (matches in-game colors)
   if (appearanceId === "player1") {
-    // Barnaby — bunny ears
-    ctx.fillStyle = "#93c5fd";
-    ctx.beginPath();
-    ctx.ellipse(player.x - 8, player.y - 20, 5, 10, -0.3, 0, Math.PI * 2);
-    ctx.ellipse(player.x + 8, player.y - 20, 5, 10, 0.3, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#93c5fd";
+    c.beginPath();
+    c.ellipse(player.x - 8 * sc, player.y - 20 * sc, 5 * sc, 10 * sc, -0.3, 0, Math.PI * 2);
+    c.ellipse(player.x + 8 * sc, player.y - 20 * sc, 5 * sc, 10 * sc, 0.3, 0, Math.PI * 2);
+    c.fill();
   } else if (appearanceId === "cluckNorris") {
-    // Cluck Norris — red comb (3 bumps on top)
-    ctx.fillStyle = "#dc2626";
+    c.fillStyle = "#dc2626";
     for (let i = -1; i <= 1; i++) {
-      const cx = player.x + i * 10;
-      const cy = player.y - player.radius;
-      const r  = i === 0 ? 10 : 7;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, Math.PI, 0);
-      ctx.closePath();
-      ctx.fill();
+      const cx = player.x + i * 10 * sc;
+      const cy = player.y - R;
+      const r  = (i === 0 ? 10 : 7) * sc;
+      c.beginPath();
+      c.arc(cx, cy, r, Math.PI, 0);
+      c.closePath();
+      c.fill();
     }
-    // Red beak
-    ctx.beginPath();
-    ctx.moveTo(player.x - 5, player.y + 2);
-    ctx.lineTo(player.x + 5, player.y + 2);
-    ctx.lineTo(player.x,     player.y + 10);
-    ctx.closePath();
-    ctx.fill();
+    c.beginPath();
+    c.moveTo(player.x - 5 * sc, player.y + 2 * sc);
+    c.lineTo(player.x + 5 * sc, player.y + 2 * sc);
+    c.lineTo(player.x, player.y + 10 * sc);
+    c.closePath();
+    c.fill();
   } else if (appearanceId === "nightwing") {
-    ctx.fillStyle = "#57534e";
-    ctx.beginPath();
-    ctx.ellipse(player.x - 10, player.y - player.radius - 2, 6, 12, -0.25, 0, Math.PI * 2);
-    ctx.ellipse(player.x + 10, player.y - player.radius - 2, 6, 12, 0.25, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#fbbf24";
-    ctx.beginPath();
-    ctx.moveTo(player.x - 4, player.y + 6);
-    ctx.lineTo(player.x + 4, player.y + 6);
-    ctx.lineTo(player.x, player.y + 12);
-    ctx.closePath();
-    ctx.fill();
+    c.fillStyle = "#57534e";
+    c.beginPath();
+    c.ellipse(player.x - 10 * sc, player.y - R - 2 * sc, 6 * sc, 12 * sc, -0.25, 0, Math.PI * 2);
+    c.ellipse(player.x + 10 * sc, player.y - R - 2 * sc, 6 * sc, 12 * sc, 0.25, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#fbbf24";
+    c.beginPath();
+    c.moveTo(player.x - 4 * sc, player.y + 6 * sc);
+    c.lineTo(player.x + 4 * sc, player.y + 6 * sc);
+    c.lineTo(player.x, player.y + 12 * sc);
+    c.closePath();
+    c.fill();
   } else if (appearanceId === "patTheGnat") {
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(player.x - 18, player.y - 4);
-    ctx.lineTo(player.x - 28, player.y - 14);
-    ctx.moveTo(player.x + 18, player.y - 4);
-    ctx.lineTo(player.x + 28, player.y - 14);
-    ctx.stroke();
-    ctx.strokeStyle = "#78716c";
-    ctx.beginPath();
-    ctx.moveTo(player.x - 3, player.y + player.radius);
-    ctx.lineTo(player.x - 5, player.y + player.radius + 10);
-    ctx.moveTo(player.x + 3, player.y + player.radius);
-    ctx.lineTo(player.x + 5, player.y + player.radius + 10);
-    ctx.stroke();
+    function patLeftWingPath() {
+      c.moveTo(player.x - 16 * sc, player.y - 2 * sc);
+      c.lineTo(player.x - 44 * sc, player.y - 26 * sc);
+      c.quadraticCurveTo(
+        player.x - 40 * sc,
+        player.y - 14 * sc,
+        player.x - 18 * sc,
+        player.y + 4 * sc
+      );
+      c.closePath();
+    }
+    function patRightWingPath() {
+      c.moveTo(player.x + 16 * sc, player.y - 2 * sc);
+      c.lineTo(player.x + 44 * sc, player.y - 26 * sc);
+      c.quadraticCurveTo(
+        player.x + 40 * sc,
+        player.y - 14 * sc,
+        player.x + 18 * sc,
+        player.y + 4 * sc
+      );
+      c.closePath();
+    }
+    c.fillStyle = "rgba(255,255,255,0.45)";
+    c.beginPath();
+    patLeftWingPath();
+    c.fill();
+    c.beginPath();
+    patRightWingPath();
+    c.fill();
+    c.strokeStyle = "rgba(255,255,255,0.6)";
+    c.lineWidth = 1.2 * sc;
+    c.beginPath();
+    patLeftWingPath();
+    c.stroke();
+    c.beginPath();
+    patRightWingPath();
+    c.stroke();
   } else if (appearanceId === "joeCrow") {
-    ctx.fillStyle = "#0a0a0a";
-    ctx.beginPath();
-    ctx.moveTo(player.x + player.radius - 2, player.y + 2);
-    ctx.lineTo(player.x + player.radius + 14, player.y + 4);
-    ctx.lineTo(player.x + player.radius - 2, player.y + 8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#fbbf24";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y + 10, player.radius * 0.72, 0.2, Math.PI - 0.2);
-    ctx.stroke();
+    c.fillStyle = "#0a0a0a";
+    c.beginPath();
+    c.moveTo(player.x + R - 2 * sc, player.y + 2 * sc);
+    c.lineTo(player.x + R + 14 * sc, player.y + 4 * sc);
+    c.lineTo(player.x + R - 2 * sc, player.y + 8 * sc);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = "#fbbf24";
+    c.lineWidth = 3 * sc;
+    c.beginPath();
+    c.arc(player.x, player.y + 10 * sc, R * 0.72, 0.2, Math.PI - 0.2);
+    c.stroke();
   } else if (appearanceId === "whiskersRat") {
-    ctx.fillStyle = "#9ca3af";
-    ctx.beginPath();
-    ctx.ellipse(player.x - player.radius + 2, player.y - 10, 7, 9, -0.3, 0, Math.PI * 2);
-    ctx.ellipse(player.x + player.radius - 2, player.y - 10, 7, 9, 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#d1d5db";
-    ctx.lineWidth = 1;
+    c.fillStyle = "#9ca3af";
+    c.beginPath();
+    c.ellipse(player.x - R + 2 * sc, player.y - 10 * sc, 7 * sc, 9 * sc, -0.3, 0, Math.PI * 2);
+    c.ellipse(player.x + R - 2 * sc, player.y - 10 * sc, 7 * sc, 9 * sc, 0.3, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = "#d1d5db";
+    c.lineWidth = 1 * sc;
     for (let i = -1; i <= 1; i++) {
-      ctx.beginPath();
-      ctx.moveTo(player.x + i * 5 - 10, player.y + 2);
-      ctx.lineTo(player.x + i * 5 - 18, player.y + 4);
-      ctx.stroke();
+      c.beginPath();
+      c.moveTo(player.x + i * 5 * sc - 10 * sc, player.y + 2 * sc);
+      c.lineTo(player.x + i * 5 * sc - 18 * sc, player.y + 4 * sc);
+      c.stroke();
     }
-    ctx.fillStyle = "#fda4af";
-    ctx.beginPath();
-    ctx.arc(player.x, player.y + 4, 3, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#fda4af";
+    c.beginPath();
+    c.arc(player.x, player.y + 4 * sc, 3 * sc, 0, Math.PI * 2);
+    c.fill();
   } else if (appearanceId === "woolySheep") {
-    ctx.strokeStyle = "#e7e5e4";
-    ctx.lineWidth = 3;
+    c.strokeStyle = "#e7e5e4";
+    c.lineWidth = 3 * sc;
     for (let a = 0; a < Math.PI * 2; a += 0.45) {
-      const rx = Math.cos(a) * player.radius;
-      const ry = Math.sin(a) * player.radius;
-      ctx.beginPath();
-      ctx.arc(player.x + rx * 0.92, player.y + ry * 0.92, 5, 0, Math.PI * 2);
-      ctx.stroke();
+      const rx = Math.cos(a) * R;
+      const ry = Math.sin(a) * R;
+      c.beginPath();
+      c.arc(player.x + rx * 0.92, player.y + ry * 0.92, 5 * sc, 0, Math.PI * 2);
+      c.stroke();
     }
-    ctx.fillStyle = "#44403c";
-    ctx.beginPath();
-    ctx.ellipse(player.x, player.y + 2, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#44403c";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 2 * sc, 10 * sc, 8 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#fafaf9";
+    c.beginPath();
+    c.arc(player.x - R * 0.75, player.y - 4 * sc, 5 * sc, 0, Math.PI * 2);
+    c.arc(player.x + R * 0.75, player.y - 4 * sc, 5 * sc, 0, Math.PI * 2);
+    c.fill();
   } else if (appearanceId === "billyGoat") {
-    ctx.fillStyle = "#57534e";
-    ctx.beginPath();
-    ctx.moveTo(player.x - 8, player.y - player.radius - 4);
-    ctx.lineTo(player.x - 18, player.y - player.radius - 18);
-    ctx.lineTo(player.x - 4, player.y - player.radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(player.x + 8, player.y - player.radius - 4);
-    ctx.lineTo(player.x + 18, player.y - player.radius - 18);
-    ctx.lineTo(player.x + 4, player.y - player.radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#a8a29e";
-    ctx.beginPath();
-    ctx.ellipse(player.x, player.y + 8, 6, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#fafaf9";
+    c.beginPath();
+    c.moveTo(player.x - 5 * sc, player.y - R + 2 * sc);
+    c.quadraticCurveTo(
+      player.x - 22 * sc,
+      player.y - R - 8 * sc,
+      player.x - 16 * sc,
+      player.y - R - 22 * sc
+    );
+    c.lineTo(player.x - 10 * sc, player.y - R - 20 * sc);
+    c.quadraticCurveTo(
+      player.x - 14 * sc,
+      player.y - R - 10 * sc,
+      player.x - 3 * sc,
+      player.y - R
+    );
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(player.x + 5 * sc, player.y - R + 2 * sc);
+    c.quadraticCurveTo(
+      player.x + 22 * sc,
+      player.y - R - 8 * sc,
+      player.x + 16 * sc,
+      player.y - R - 22 * sc
+    );
+    c.lineTo(player.x + 10 * sc, player.y - R - 20 * sc);
+    c.quadraticCurveTo(
+      player.x + 14 * sc,
+      player.y - R - 10 * sc,
+      player.x + 3 * sc,
+      player.y - R
+    );
+    c.closePath();
+    c.fill();
+    c.fillStyle = "#a8a29e";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 8 * sc, 6 * sc, 5 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#fefce8";
+    c.beginPath();
+    c.moveTo(player.x - 6 * sc, player.y + 5 * sc);
+    c.lineTo(player.x - 2 * sc, player.y + 5 * sc);
+    c.lineTo(player.x - 2 * sc, player.y + 11 * sc);
+    c.lineTo(player.x - 6 * sc, player.y + 11 * sc);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(player.x + 2 * sc, player.y + 5 * sc);
+    c.lineTo(player.x + 6 * sc, player.y + 5 * sc);
+    c.lineTo(player.x + 6 * sc, player.y + 11 * sc);
+    c.lineTo(player.x + 2 * sc, player.y + 11 * sc);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = "#d6d3d1";
+    c.lineWidth = 0.8 * sc;
+    c.strokeRect(player.x - 6 * sc, player.y + 5 * sc, 4 * sc, 6 * sc);
+    c.strokeRect(player.x + 2 * sc, player.y + 5 * sc, 4 * sc, 6 * sc);
   } else if (appearanceId === "lilTunnelPete") {
-    // Lil' Tunnel Pete — floppy dog ears drooping down the sides
-    ctx.fillStyle = "#92400e";
-    ctx.beginPath();
-    ctx.ellipse(player.x - player.radius + 3, player.y - 7, 5, 10, -0.22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(player.x + player.radius - 3, player.y - 7, 5, 10, 0.22, 0, Math.PI * 2);
-    ctx.fill();
-    // Light brown inner circle
-    ctx.fillStyle = "#c8935a";
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.radius * 0.55, 0, Math.PI * 2);
-    ctx.fill();
-    // Snout
-    ctx.fillStyle = "#d97706";
-    ctx.beginPath();
-    ctx.ellipse(player.x, player.y + 6, 8, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Nose
-    ctx.fillStyle = "#7c2d12";
-    ctx.beginPath();
-    ctx.arc(player.x, player.y + 4, 2, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#92400e";
+    c.beginPath();
+    c.ellipse(player.x - R + 3 * sc, player.y - 7 * sc, 5 * sc, 10 * sc, -0.22, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(player.x + R - 3 * sc, player.y - 7 * sc, 5 * sc, 10 * sc, 0.22, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#c8935a";
+    c.beginPath();
+    c.arc(player.x, player.y, R * 0.55, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#d97706";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 6 * sc, 8 * sc, 5 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#7c2d12";
+    c.beginPath();
+    c.arc(player.x, player.y + 4 * sc, 2 * sc, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "player2") {
+    c.fillStyle = "#fbcfe8";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 5 * sc, 13 * sc, 9 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#be185d";
+    c.beginPath();
+    c.arc(player.x - 4 * sc, player.y + 5 * sc, 2 * sc, 0, Math.PI * 2);
+    c.arc(player.x + 4 * sc, player.y + 5 * sc, 2 * sc, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = "#ec4899";
+    c.lineWidth = 2 * sc;
+    c.beginPath();
+    c.arc(player.x + R + 4 * sc, player.y + 2 * sc, 4 * sc, -0.3, Math.PI * 0.8);
+    c.stroke();
+  } else if (appearanceId === "allyHorse") {
+    c.fillStyle = "#3f2e1f";
+    for (let i = -2; i <= 2; i++) {
+      c.beginPath();
+      c.arc(player.x + i * 6 * sc, player.y - R * 0.82, 7 * sc, Math.PI, 0);
+      c.fill();
+    }
+    c.fillStyle = "#f4f4f5";
+    c.beginPath();
+    c.moveTo(player.x - 2 * sc, player.y - 8 * sc);
+    c.lineTo(player.x, player.y + R * 0.35);
+    c.lineTo(player.x + 2 * sc, player.y - 8 * sc);
+    c.closePath();
+    c.fill();
+    c.fillStyle = player.color;
+    c.beginPath();
+    c.ellipse(player.x - 9 * sc, player.y - R - 3 * sc, 4 * sc, 9 * sc, -0.25, 0, Math.PI * 2);
+    c.ellipse(player.x + 9 * sc, player.y - R - 3 * sc, 4 * sc, 9 * sc, 0.25, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "allyDonkey") {
+    c.fillStyle = player.color;
+    c.beginPath();
+    c.ellipse(player.x - R * 0.35, player.y - R * 0.15, 6 * sc, 16 * sc, -0.32, 0, Math.PI * 2);
+    c.ellipse(player.x + R * 0.35, player.y - R * 0.15, 6 * sc, 16 * sc, 0.32, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(player.x, player.y + 5 * sc, 10 * sc, 7 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#15803d";
+    c.beginPath();
+    c.arc(player.x - 3 * sc, player.y + 5 * sc, 1.6 * sc, 0, Math.PI * 2);
+    c.arc(player.x + 3 * sc, player.y + 5 * sc, 1.6 * sc, 0, Math.PI * 2);
+    c.fill();
   } else {
-    // Default pig snout
-    ctx.fillStyle = "#f9a8d4";
-    ctx.beginPath();
-    ctx.ellipse(player.x, player.y + 4, 12, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#7f1d1d";
-    ctx.beginPath();
-    ctx.arc(player.x - 4, player.y + 4, 1.5, 0, Math.PI * 2);
-    ctx.arc(player.x + 4, player.y + 4, 1.5, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = "#f9a8d4";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 4 * sc, 12 * sc, 8 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#7f1d1d";
+    c.beginPath();
+    c.arc(player.x - 4 * sc, player.y + 4 * sc, 1.5 * sc, 0, Math.PI * 2);
+    c.arc(player.x + 4 * sc, player.y + 4 * sc, 1.5 * sc, 0, Math.PI * 2);
+    c.fill();
   }
 
-  // Eyes
-  ctx.fillStyle = COLORS.white;
-  ctx.beginPath();
-  ctx.arc(player.x - 6, player.y - 5, 4, 0, Math.PI * 2);
-  ctx.arc(player.x + 6, player.y - 5, 4, 0, Math.PI * 2);
-  ctx.fill();
+  // Eyes (scale with body so small previews stay proportional)
+  const eyeX = 6 * sc;
+  const eyeY = 5 * sc;
+  const eyeW = 4 * sc;
+  const pupilR = 2 * sc;
+  c.fillStyle = COLORS.white;
+  c.beginPath();
+  c.arc(player.x - eyeX, player.y - eyeY, eyeW, 0, Math.PI * 2);
+  c.arc(player.x + eyeX, player.y - eyeY, eyeW, 0, Math.PI * 2);
+  c.fill();
 
-  ctx.fillStyle = COLORS.black;
-  ctx.beginPath();
-  ctx.arc(player.x - 6, player.y - 5, 2, 0, Math.PI * 2);
-  ctx.arc(player.x + 6, player.y - 5, 2, 0, Math.PI * 2);
-  ctx.fill();
+  c.fillStyle = COLORS.black;
+  c.beginPath();
+  c.arc(player.x - eyeX, player.y - eyeY, pupilR, 0, Math.PI * 2);
+  c.arc(player.x + eyeX, player.y - eyeY, pupilR, 0, Math.PI * 2);
+  c.fill();
 
   // Label
-  ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 14px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(label, player.x, player.y - 30);
+  if (!player.suppressNameTag) {
+    c.fillStyle = COLORS.white;
+    c.font = "bold 14px Arial";
+    c.textAlign = "center";
+    c.fillText(label, player.x, player.y - 30 * sc);
+  }
 
   // Ball marker
-  if (ball.carrier === player) {
-    ctx.fillStyle = accentText;
-    ctx.font = "bold 12px Arial";
-    ctx.fillText("BALL", player.x, player.y - 44);
+  if (!player.suppressNameTag && ball.carrier === player) {
+    c.fillStyle = accentText;
+    c.font = "bold 12px Arial";
+    c.fillText("BALL", player.x, player.y - 44 * sc);
   }
 }
 
@@ -850,12 +1019,12 @@ function drawScoreboard() {
   ctx.fillStyle = rightColor;
   ctx.fillText(rightText, canvas.width - 24, 36);
 
-  if (game.mode === "play" || game.mode === "defense") {
+  if (game.mode === "play") {
     ctx.textAlign = "center";
     ctx.fillStyle = "#e5e7eb";
     ctx.font = "14px Arial";
-    const modeLabel = game.mode === "defense"
-      ? (game.turnoverSeriesActive ? "Turnover Defense" : "Defense Mode")
+    const modeLabel = game.cpuOffense
+      ? (game.turnoverSeriesActive ? "Turnover — you're on D" : "CPU offense — you're on D")
       : "Play Mode";
     ctx.fillText(`${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, 54);
   }
@@ -884,7 +1053,12 @@ function buildPlayResultText() {
   return { text: `${label} — No gain`, color: "#fbbf24" };
 }
 
-function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyle = null) {
+function shouldShowFarmerAnnouncerForPlayResult() {
+  const rt = game.playModeLastResultType;
+  return rt === "interception" || rt === "gain" || rt === "loss" || rt === "sack";
+}
+
+function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyle = null, showAnnouncer = false) {
   const hasDetail = !!detail;
   const hasSubtitle = !!subtitle;
   const hasButton = !!buttonText;
@@ -896,38 +1070,44 @@ function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyl
     ? (hasButton ? 220 : 185)
     : (hasButton ? 185 : 150);
   const boxY = Math.round((canvas.height - boxH) / 2) - 10;
+  const textCx = showAnnouncer ? 545 : canvas.width / 2;
 
-  ctx.fillStyle = "rgba(17, 24, 39, 0.88)";
+  ctx.fillStyle = showAnnouncer ? "rgba(17, 24, 39, 0.72)" : "rgba(17, 24, 39, 0.88)";
   ctx.fillRect(180, boxY, 600, boxH);
 
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
   ctx.strokeRect(180, boxY, 600, boxH);
 
+  if (showAnnouncer) {
+    const ah = Math.min(128, boxH - 36);
+    drawAnnouncerPortrait(196, boxY + (boxH - ah) / 2, ah);
+  }
+
   ctx.textAlign = "center";
   ctx.font = "bold 34px Arial";
   ctx.lineWidth = flashTitle ? 5 : 3;
   ctx.strokeStyle = flashTitle ? (flashOn ? "#fff7ed" : "#7c2d12") : "#111827";
   ctx.fillStyle = flashTitle ? (flashOn ? titleColor : titleDimColor) : titleColor;
-  ctx.strokeText(title, canvas.width / 2, boxY + 52);
-  ctx.fillText(title, canvas.width / 2, boxY + 52);
+  ctx.strokeText(title, textCx, boxY + 52);
+  ctx.fillText(title, textCx, boxY + 52);
 
   if (hasSubtitle) {
     ctx.font = "18px Arial";
     ctx.fillStyle = COLORS.white;
-    ctx.fillText(subtitle, canvas.width / 2, boxY + 90);
+    ctx.fillText(subtitle, textCx, boxY + 90);
   }
 
   if (hasDetail) {
     ctx.font = "bold 22px Arial";
     ctx.fillStyle = detail.color;
-    ctx.fillText(detail.text, canvas.width / 2, boxY + (hasSubtitle ? 138 : 102));
+    ctx.fillText(detail.text, textCx, boxY + (hasSubtitle ? 138 : 102));
   }
 
   if (hasButton) {
     const bw = 140;
     const bh = 42;
-    const bx = canvas.width / 2 - bw / 2;
+    const bx = textCx - bw / 2;
     const by = boxY + boxH - 58;
     ctx.fillStyle = "#374151";
     ctx.fillRect(bx, by, bw, bh);
@@ -936,49 +1116,273 @@ function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyl
     ctx.strokeRect(bx, by, bw, bh);
     ctx.fillStyle = COLORS.white;
     ctx.font = "bold 20px Arial";
-    ctx.fillText(buttonText, canvas.width / 2, by + bh / 2 + 7);
+    ctx.fillText(buttonText, textCx, by + bh / 2 + 7);
   }
 }
 
 function drawSafetyPopup() {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.38)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
+  const img = announcerFarmerImage;
+  let textY = cy;
+  if (img.complete && img.naturalWidth) {
+    const ah = 200;
+    const aw = (img.naturalWidth / img.naturalHeight) * ah;
+    const ay = cy - ah / 2 - 75;
+    const ax = cx - aw / 2;
+    const pad = 10;
+    drawAnnouncerTranslucentBackdrop(ax - pad, ay - pad, aw + pad * 2, ah + pad * 2, 16);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, ax, ay, aw, ah);
+    ctx.restore();
+    textY = ay + ah + 60;
+  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
   ctx.font = "bold 80px Arial";
   ctx.strokeStyle = "#ef4444";
   ctx.lineWidth = 6;
-  ctx.strokeText("🙆🏿‍♂️ SAFETY 🙆🏿‍♂️", cx, cy);
+  ctx.strokeText("SAFETY", cx, textY);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("🙆🏿‍♂️ SAFETY 🙆🏿‍♂️", cx, cy);
+  ctx.fillText("SAFETY", cx, textY);
   ctx.textBaseline = "alphabetic";
 }
 
-function drawBigPopupBanner(text) {
+function drawBigPopupBanner(text, withAnnouncer = false) {
   ctx.save();
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.white;
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
+  let textY = cy;
+  if (withAnnouncer) {
+    const img = announcerFarmerImage;
+    if (img.complete && img.naturalWidth) {
+      const ah = 210;
+      const aw = (img.naturalWidth / img.naturalHeight) * ah;
+      const ay = cy - ah / 2 - 55;
+      const ax = cx - aw / 2;
+      const pad = 10;
+      drawAnnouncerTranslucentBackdrop(ax - pad, ay - pad, aw + pad * 2, ah + pad * 2, 16);
+      ctx.imageSmoothingEnabled = true;
+      if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, ax, ay, aw, ah);
+      textY = ay + ah + 65;
+    }
+  }
   ctx.strokeStyle = "#facc15";
   ctx.lineWidth = 6;
   ctx.font = "bold 96px Arial";
-  ctx.strokeText(text, cx, cy);
-  ctx.fillText(text, cx, cy);
+  ctx.fillStyle = COLORS.white;
+  ctx.strokeText(text, cx, textY);
+  ctx.fillText(text, cx, textY);
   ctx.restore();
 }
 
 function drawInterceptionHoldOverlay() {
-  drawBigPopupBanner("INTERCEPTION");
+  const total = 2000;
+  const t = 1 - game.interceptionPopupTimer / total;
+  const cx = canvas.width / 2;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const henX = 80 + t * (cx - 140);
+  const henY = canvas.height * 0.38;
+  ctx.fillStyle = "#fef08a";
+  ctx.beginPath();
+  ctx.arc(henX, henY, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#854d0e";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = "#f97316";
+  ctx.beginPath();
+  ctx.moveTo(henX + 18, henY - 8);
+  ctx.lineTo(henX + 32, henY - 14);
+  ctx.lineTo(henX + 20, henY + 4);
+  ctx.closePath();
+  ctx.fill();
+  const ballT = Math.min(1, t * 1.4);
+  const bx = 320 + ballT * 220;
+  const by = henY + 10;
+  const r = Math.round(147 + (249 - 147) * ballT);
+  const g = Math.round(197 + (168 - 197) * ballT);
+  const b = Math.round(253 + (232 - 253) * ballT);
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.beginPath();
+  ctx.arc(bx, by, 12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5b3718";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const barY = canvas.height - 78;
+  ctx.fillStyle = "#b91c1c";
+  ctx.fillRect(0, barY, canvas.width, 56);
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(0, barY, canvas.width, 4);
+  ctx.textAlign = "left";
+  ctx.font = "bold 22px Arial";
+  ctx.fillStyle = "#fef2f2";
+  ctx.fillText("BREAKING:", 24, barY + 36);
+  ctx.font = "bold 26px Arial";
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("TURNOVER", 160, barY + 38);
+  const img = announcerFarmerImage;
+  if (img.complete && img.naturalWidth) {
+    const ih = 52;
+    const iw = (img.naturalWidth / img.naturalHeight) * ih;
+    ctx.drawImage(img, canvas.width - iw - 20, barY + 2, iw, ih);
+  }
+  ctx.textAlign = "center";
+  ctx.font = "bold 72px Arial";
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 5;
+  ctx.fillStyle = COLORS.white;
+  ctx.strokeText("INTERCEPTION", cx, canvas.height * 0.52);
+  ctx.fillText("INTERCEPTION", cx, canvas.height * 0.52);
+}
+
+function drawTouchdownTractorBanner() {
+  const elapsed = 4000 - game.touchdownPopupTimer;
+  const progress = Math.min(1, elapsed / 3200);
+  const x = -90 + progress * (canvas.width + 200);
+  const y = canvas.height - 62;
+  ctx.fillStyle = "#15803d";
+  ctx.fillRect(x, y, 100, 36);
+  ctx.fillStyle = "#166534";
+  ctx.beginPath();
+  ctx.arc(x + 22, y + 36, 14, 0, Math.PI * 2);
+  ctx.arc(x + 78, y + 36, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath();
+  ctx.arc(x + 22, y + 36, 7, 0, Math.PI * 2);
+  ctx.arc(x + 78, y + 36, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#facc15";
+  ctx.strokeStyle = "#a16207";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 102, y + 4, 72, 28);
+  ctx.fillRect(x + 102, y + 4, 72, 28);
+  ctx.font = "bold 22px Arial";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#78350f";
+  ctx.fillText("TD!", x + 138, y + 24);
+}
+
+function drawTouchdownScorebug() {
+  const name = game.lastTouchdownTeamName || "Touchdown";
+  const pulse = 0.55 + Math.sin(Date.now() / 200) * 0.2;
+  const bw = 420;
+  const bx = (canvas.width - bw) / 2;
+  const by = 62;
+  const bh = 86;
+  ctx.save();
+  ctx.strokeStyle = `rgba(234, 179, 8, ${pulse})`;
+  ctx.lineWidth = 5;
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 12);
+  } else {
+    ctx.beginPath();
+    ctx.rect(bx, by, bw, bh);
+  }
+  ctx.stroke();
+  const g = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
+  g.addColorStop(0, "rgba(254, 243, 199, 0.35)");
+  g.addColorStop(1, "rgba(202, 138, 4, 0.25)");
+  ctx.fillStyle = g;
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath();
+    ctx.roundRect(bx + 3, by + 3, bw - 6, bh - 6, 9);
+  } else {
+    ctx.fillRect(bx + 3, by + 3, bw - 6, bh - 6);
+  }
+  ctx.fill();
+  ctx.textAlign = "center";
+  ctx.font = "bold 22px Arial";
+  ctx.fillStyle = "#fefce8";
+  ctx.fillText(name.toUpperCase(), canvas.width / 2, by + 38);
+  ctx.font = "bold 32px Arial";
+  ctx.fillStyle = "#facc15";
+  ctx.fillText("TOUCHDOWN", canvas.width / 2, by + 72);
+  ctx.restore();
 }
 
 function drawTouchdownPopup() {
-  drawBigPopupBanner("TOUCHDOWN");
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawTouchdownScorebug();
+  drawTouchdownTractorBanner();
+  ctx.textAlign = "center";
+  ctx.font = "bold 56px Arial";
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 4;
+  ctx.fillStyle = COLORS.white;
+  const midY = canvas.height * 0.42;
+  ctx.strokeText("SCORE!", canvas.width / 2, midY);
+  ctx.fillText("SCORE!", canvas.width / 2, midY);
+}
+
+function drawFieldCelebrationFx() {
+  if (game.fieldCelebrationTimer <= 0 || !game.fieldCelebrationType) return;
+  const fx = game.fieldCelebrationX;
+  const fy = FIELD.y + FIELD.height * 0.55;
+  const str = game.fieldCelebrationTimer / 2800;
+  if (game.fieldCelebrationType === "mud") {
+    for (let i = 0; i < 8; i++) {
+      const mx = fx + Math.sin(i * 1.7 + Date.now() / 200) * (24 + i * 5);
+      const my = fy + Math.cos(i * 2.1) * 16;
+      ctx.fillStyle = `rgba(120, 53, 15, ${0.35 + str * 0.25})`;
+      ctx.beginPath();
+      ctx.ellipse(mx, my, 12 + i * 2, 8 + (i % 3), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (game.fieldCelebrationType === "sack") {
+    const qbx = fx;
+    const qby = fy - 20;
+    for (let b = 0; b < 5; b++) {
+      const ang = (Date.now() / 180 + b * 1.2) % (Math.PI * 2);
+      const bx = qbx + Math.cos(ang) * 36;
+      const by = qby + Math.sin(ang) * 22;
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 6, 4, ang, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#713f12";
+      ctx.stroke();
+    }
+    for (let s = 0; s < 6; s++) {
+      const rot = Date.now() / 300 + s;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(qbx + Math.cos(rot) * 18, qby + Math.sin(rot) * 18);
+      ctx.lineTo(qbx + Math.cos(rot + 0.5) * 28, qby + Math.sin(rot + 0.5) * 28);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(120, 53, 15, 0.85)";
+    ctx.fillRect(canvas.width - 118, 68, 44, 36);
+    ctx.strokeStyle = "#fde68a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(canvas.width - 118, 68, 44, 36);
+    ctx.fillStyle = "#451a03";
+    ctx.beginPath();
+    ctx.arc(canvas.width - 96, 88, 5, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 5; i++) {
+      const h = 4 + (i % 3) * 6;
+      ctx.fillStyle = i % 2 === 0 ? "#22c55e" : "#ef4444";
+      ctx.fillRect(canvas.width - 112 + i * 8, 92 - h, 5, h);
+    }
+  }
 }
 
 function drawMenuBackground() {
@@ -1236,10 +1640,9 @@ function drawMenu() {
   ctx.fillText("Farm Football Frenzy", canvas.width / 2, 160);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Choose offense or defense", canvas.width / 2, 210);
+  ctx.fillText("Pick a team, then play offense or defense after the coin toss.", canvas.width / 2, 210);
 
   const pl = MENU_BUTTONS.playMode;
-  const def = MENU_BUTTONS.defenseMode;
 
   ctx.fillStyle = "#374151";
   ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
@@ -1247,16 +1650,8 @@ function drawMenu() {
   ctx.lineWidth = 3;
   ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 20px Arial";
-  ctx.fillText("Play", pl.x + pl.w / 2, pl.y + pl.h / 2 + 7);
-
-  ctx.fillStyle = "#374151";
-  ctx.fillRect(def.x, def.y, def.w, def.h);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(def.x, def.y, def.w, def.h);
-  ctx.fillStyle = COLORS.white;
-  ctx.fillText("Defense", def.x + def.w / 2, def.y + def.h / 2 + 7);
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Play", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
 
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
@@ -1271,34 +1666,83 @@ function drawTeamSelectOverlay() {
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 32px Arial";
-  ctx.fillText("Pick your team", canvas.width / 2, 78);
-  ctx.font = "15px Arial";
-  ctx.fillStyle = "#d1d5db";
-  ctx.fillText("CPU opponent is picked at random from the three teams you did not choose", canvas.width / 2, 106);
-
-  ctx.font = "bold 18px Arial";
-  ctx.fillStyle = "#e5e7eb";
-  ctx.textAlign = "left";
-  ctx.fillText("Your team — coin toss decides who starts on offense", L.noFlyZone.x, L.noFlyZone.y - 14);
+  ctx.fillText("Pick your team", canvas.width / 2, 58);
 
   function drawCard(rect, teamId, selected) {
-    const pad = 6;
-    const bannerH = 78;
+    const pad = 10;
+    const bannerH = 68;
+    const nameStripH = 22;
+    const PR = CONFIG.playerRadius;
     ctx.fillStyle = "#374151";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     drawTeamBannerImage(teamId, rect.x + pad, rect.y + pad, rect.w - pad * 2, bannerH);
+    ctx.fillStyle = "#1f2937";
+    ctx.fillRect(rect.x + pad, rect.y + pad + bannerH, rect.w - pad * 2, nameStripH);
     ctx.strokeStyle = selected ? "#fbbf24" : COLORS.white;
     ctx.lineWidth = selected ? 4 : 2;
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
     ctx.textAlign = "center";
     ctx.fillStyle = COLORS.white;
-    ctx.font = "bold 18px Arial";
-    ctx.fillText(TEAMS[teamId].name, rect.x + rect.w / 2, rect.y + pad + bannerH + 20);
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(TEAMS[teamId].name, rect.x + rect.w / 2, rect.y + pad + bannerH + 17);
     const r = TEAMS[teamId].roster;
-    ctx.font = "12px Arial";
-    ctx.fillStyle = "#d1d5db";
-    ctx.fillText(`${r.qb.displayLabel}, ${r.wr.displayLabel}`, rect.x + rect.w / 2, rect.y + pad + bannerH + 42);
-    ctx.fillText(r.flex.displayLabel, rect.x + rect.w / 2, rect.y + pad + bannerH + 58);
+    const slots = ["qb", "wr", "flex"];
+    const innerW = rect.w - pad * 2;
+    const gutter = 6;
+    const colW = (innerW - gutter * 2) / 3;
+    const rosterTop = rect.y + pad + bannerH + nameStripH + 4;
+    const rosterBot = rect.y + rect.h - pad;
+    const labelBaseline = rosterTop + 11;
+    const maxLabelW = colW - 4;
+    const bw = TEAM_SELECT_PLAYER_BUFFER.width;
+    const bh = TEAM_SELECT_PLAYER_BUFFER.height;
+    let previewScale = Math.min((colW - 2) / bw, (rosterBot - labelBaseline - 6) / bh, 1.08);
+    previewScale = Math.max(0.42, previewScale);
+    let destY = rosterBot - bh * previewScale - 2;
+    const minDestY = labelBaseline + 8;
+    if (destY < minDestY) {
+      destY = minDestY;
+      previewScale = Math.max(0.28, (rosterBot - destY - 2) / bh);
+    }
+    const pctx = TEAM_SELECT_PLAYER_CTX;
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in pctx) pctx.imageSmoothingQuality = "high";
+    function fitRosterName(text) {
+      ctx.font = "bold 9px Arial";
+      if (ctx.measureText(text).width <= maxLabelW) return text;
+      let s = text;
+      while (s.length > 1 && ctx.measureText(`${s}…`).width > maxLabelW) s = s.slice(0, -1);
+      return `${s}…`;
+    }
+    ctx.fillStyle = "#e5e7eb";
+    for (let i = 0; i < 3; i++) {
+      const cx = rect.x + pad + gutter + colW * (i + 0.5);
+      const entry = r[slots[i]];
+      ctx.fillText(fitRosterName(entry.displayLabel), cx, labelBaseline);
+      pctx.clearRect(0, 0, bw, bh);
+      drawPlayer(
+        {
+          x: TEAM_SELECT_PREVIEW_CX,
+          y: TEAM_SELECT_PREVIEW_CY,
+          radius: PR,
+          displayLabel: entry.displayLabel,
+          color: entry.color,
+          ballAccent: entry.ballAccent,
+          appearanceId: entry.appearanceId,
+          suppressNameTag: true
+        },
+        pctx
+      );
+      const destW = bw * previewScale;
+      const destH = bh * previewScale;
+      const destX = cx - TEAM_SELECT_PREVIEW_CX * previewScale;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(TEAM_SELECT_PLAYER_BUFFER, 0, 0, bw, bh, destX, destY, destW, destH);
+      ctx.restore();
+    }
   }
 
   const yUser = game.teamSelectUser;
@@ -1322,8 +1766,9 @@ function drawTeamSelectOverlay() {
   ctx.strokeStyle = COLORS.white;
   ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
   ctx.font = "bold 14px Arial";
+  ctx.fillStyle = COLORS.white;
   ctx.textAlign = "center";
-  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+  ctx.fillText("Main menu", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
 
   if (!canStart) {
     ctx.fillStyle = "#9ca3af";
@@ -1433,6 +1878,117 @@ function getCoinTossLayout() {
   };
 }
 
+/** Same gold radial as the coin face (origin at coin center); r is inner face radius. */
+function fillCoinFaceGradient(ctx, r) {
+  const gx = (-12 / 58) * r;
+  const gy = (-12 / 58) * r;
+  const r0 = (4 / 58) * r;
+  const grd = ctx.createRadialGradient(gx, gy, r0, 0, 0, r);
+  grd.addColorStop(0, "#fde047");
+  grd.addColorStop(0.5, "#eab308");
+  grd.addColorStop(1, "#a16207");
+  ctx.fillStyle = grd;
+  ctx.fillRect(-r * 2, -r * 2, r * 4, r * 4);
+}
+
+/**
+ * Scaled coin face image at origin; caller may clip.
+ * White/light backgrounds blend to the coin gradient via multiply. Larger scale = bigger art.
+ */
+function drawCoinHorseFaceImageRaw(ctx, img, r) {
+  if (!img || !img.complete || !img.naturalWidth) return false;
+  const size = r * 2.42;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const scale = size / Math.max(w, h);
+  const dw = w * scale;
+  const dh = h * scale;
+  ctx.save();
+  fillCoinFaceGradient(ctx, r);
+  ctx.globalCompositeOperation = "multiply";
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
+  return true;
+}
+
+/** Full circular face — clip to circle r then draw image (or return false). */
+function drawCoinHorseFaceImageInCircle(ctx, img, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+  const ok = drawCoinHorseFaceImageRaw(ctx, img, r);
+  ctx.restore();
+  return ok;
+}
+
+function drawCoinHorseFace(ctx, r, side) {
+  const img = side === "head" ? coinHorseHeadImage : coinHorseTailImage;
+  if (drawCoinHorseFaceImageInCircle(ctx, img, r)) return;
+  if (side === "head") drawCoinHorseHead(ctx, r);
+  else drawCoinHorseTail(ctx, r);
+}
+
+/** Horse head profile on the “heads” side; origin at coin center, r ≈ coin radius. */
+function drawCoinHorseHead(ctx, r) {
+  const rx = (v) => v * r;
+  const ry = (v) => v * r;
+  ctx.save();
+  ctx.fillStyle = "#4a3728";
+  ctx.strokeStyle = "#2d2118";
+  ctx.lineWidth = Math.max(1.5, r * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(rx(-0.38), ry(0.18));
+  ctx.quadraticCurveTo(rx(-0.48), ry(-0.05), rx(-0.28), ry(-0.44));
+  ctx.quadraticCurveTo(rx(-0.08), ry(-0.58), rx(0.22), ry(-0.5));
+  ctx.quadraticCurveTo(rx(0.52), ry(-0.38), rx(0.62), ry(-0.06));
+  ctx.quadraticCurveTo(rx(0.66), ry(0.14), rx(0.48), ry(0.3));
+  ctx.quadraticCurveTo(rx(0.12), ry(0.34), rx(-0.38), ry(0.18));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#1a1510";
+  ctx.beginPath();
+  ctx.arc(rx(0.14), ry(-0.14), r * 0.075, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#2d2118";
+  ctx.beginPath();
+  ctx.ellipse(rx(0.5), ry(0.1), r * 0.045, r * 0.028, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Horse tail on the “tails” side; origin at coin center, r ≈ coin radius. */
+function drawCoinHorseTail(ctx, r) {
+  const rx = (v) => v * r;
+  const ry = (v) => v * r;
+  ctx.save();
+  ctx.fillStyle = "#3d2f24";
+  ctx.strokeStyle = "#2a1f18";
+  ctx.lineWidth = Math.max(1.5, r * 0.055);
+  ctx.beginPath();
+  ctx.moveTo(rx(0.12), ry(-0.38));
+  ctx.bezierCurveTo(rx(0.52), ry(-0.22), rx(0.48), ry(0.38), rx(-0.18), ry(0.48));
+  ctx.bezierCurveTo(rx(-0.48), ry(0.52), rx(-0.58), ry(0.22), rx(-0.38), ry(-0.12));
+  ctx.bezierCurveTo(rx(-0.28), ry(-0.38), rx(-0.02), ry(-0.42), rx(0.12), ry(-0.38));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "#2a1f18";
+  ctx.lineWidth = Math.max(1, r * 0.034);
+  ctx.beginPath();
+  ctx.moveTo(rx(0.08), ry(-0.22));
+  ctx.quadraticCurveTo(rx(-0.22), ry(0.08), rx(-0.42), ry(0.36));
+  ctx.moveTo(rx(0.24), ry(0.02));
+  ctx.quadraticCurveTo(rx(-0.12), ry(0.28), rx(-0.38), ry(0.44));
+  ctx.moveTo(rx(0.32), ry(0.18));
+  ctx.quadraticCurveTo(rx(0.05), ry(0.35), rx(-0.28), ry(0.48));
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawCoinTossButton(rect, label, sub) {
   ctx.fillStyle = "#374151";
   ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -1478,18 +2034,22 @@ function drawCoinTossOverlay() {
   if (phase === "pickCall" || phase === "flipping") {
     ctx.font = "16px Arial";
     ctx.fillStyle = "#d1d5db";
-    ctx.fillText("Call it — pick Heads or Tails, then the coin flips.", canvas.width / 2, 136);
+    ctx.fillText("Call it — Horse head or tail, then the coin flips.", canvas.width / 2, 136);
     ctx.font = "12px Arial";
     ctx.fillStyle = "#6b7280";
-    ctx.fillText("Keys: 1 / H = Heads · 2 / T = Tails", canvas.width / 2, 158);
+    ctx.fillText("Keys: 1 / H = Head · 2 / T = Tail", canvas.width / 2, 158);
+  }
+
+  let flipSpin = 0;
+  if (phase === "flipping") {
+    const t = 1 - game.coinTossFlipTimer / 1500;
+    flipSpin = t * Math.PI * 10;
   }
 
   ctx.save();
   ctx.translate(coinCx, coinCy);
   if (phase === "flipping") {
-    const t = 1 - game.coinTossFlipTimer / 1500;
-    const spin = t * Math.PI * 10;
-    ctx.scale(Math.abs(Math.cos(spin)), 1);
+    ctx.scale(Math.abs(Math.cos(flipSpin)), 1);
   }
   const grd = ctx.createRadialGradient(-12, -12, 4, 0, 0, coinR);
   grd.addColorStop(0, "#fde047");
@@ -1502,20 +2062,47 @@ function drawCoinTossOverlay() {
   ctx.strokeStyle = "#713f12";
   ctx.lineWidth = 4;
   ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#422006";
-  ctx.font = "bold 26px Arial";
-  if (phase === "result" || phase === "userChooseSide" || phase === "cpuChose") {
-    ctx.fillText(game.coinTossResult === "heads" ? "H" : "T", 0, 9);
-  } else {
-    ctx.font = "bold 18px Arial";
-    ctx.fillText("H · T", 0, 7);
+
+  const innerR = coinR - 6;
+  if (phase === "pickCall") {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, innerR, Math.PI / 2, (Math.PI * 3) / 2, false);
+    ctx.closePath();
+    ctx.clip();
+    ctx.translate(-innerR * 0.14, 0);
+    if (!drawCoinHorseFaceImageRaw(ctx, coinHorseHeadImage, innerR)) {
+      drawCoinHorseHead(ctx, innerR);
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, innerR, (Math.PI * 3) / 2, Math.PI / 2, false);
+    ctx.closePath();
+    ctx.clip();
+    ctx.translate(innerR * 0.12, 0);
+    if (!drawCoinHorseFaceImageRaw(ctx, coinHorseTailImage, innerR)) {
+      drawCoinHorseTail(ctx, innerR);
+    }
+    ctx.restore();
+    ctx.strokeStyle = "rgba(65, 48, 30, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -innerR + 2);
+    ctx.lineTo(0, innerR - 2);
+    ctx.stroke();
+  } else if (phase === "flipping") {
+    drawCoinHorseFace(ctx, innerR, Math.cos(flipSpin) >= 0 ? "head" : "tail");
+  } else if (phase === "result" || phase === "userChooseSide" || phase === "cpuChose") {
+    drawCoinHorseFace(ctx, innerR, game.coinTossResult === "heads" ? "head" : "tail");
   }
   ctx.restore();
 
   if (phase === "pickCall") {
-    drawCoinTossButton(L.heads, "Heads");
-    drawCoinTossButton(L.tails, "Tails");
+    drawCoinTossButton(L.heads, "Head");
+    drawCoinTossButton(L.tails, "Tail");
   } else if (phase === "flipping") {
     ctx.fillStyle = "#fbbf24";
     ctx.font = "bold 22px Arial";
@@ -1581,28 +2168,30 @@ function drawCoinTossOverlay() {
   ctx.font = "bold 14px Arial";
   ctx.fillStyle = COLORS.white;
   ctx.textAlign = "center";
-  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+  ctx.fillText("Main menu", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
 }
 
 function drawPauseMenu() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.35)";
-  ctx.fillRect(200, 180, 560, 240);
+  ctx.fillRect(200, 150, 560, 300);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(200, 180, 560, 240);
+  ctx.strokeRect(200, 150, 560, 300);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 32px Arial";
-  ctx.fillText("Paused", canvas.width / 2, 230);
+  ctx.fillText("Paused", canvas.width / 2, 198);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Press ESC again to resume", canvas.width / 2, 265);
+  ctx.fillText("Press ESC again to resume", canvas.width / 2, 228);
 
   const res = PAUSE_MENU_BUTTONS.resume;
+  const rep = PAUSE_MENU_BUTTONS.instantReplay;
   const modeBtn = PAUSE_MENU_BUTTONS.modeRestart;
   const home = PAUSE_MENU_BUTTONS.home;
-  const modeLabel = game.mode === "defense" ? "New Defense Game" : "New Play Game";
+  const modeLabel = "New Play Game";
+  const hasReplay = typeof replayHasLastPlay === "function" && replayHasLastPlay();
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(res.x, res.y, res.w, res.h);
@@ -1613,17 +2202,30 @@ function drawPauseMenu() {
   ctx.font = "bold 22px Arial";
   ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
 
+  ctx.fillStyle = hasReplay ? "rgba(55, 65, 81, 0.45)" : "rgba(55, 65, 81, 0.25)";
+  ctx.fillRect(rep.x, rep.y, rep.w, rep.h);
+  ctx.strokeStyle = hasReplay ? COLORS.white : "#6b7280";
+  ctx.strokeRect(rep.x, rep.y, rep.w, rep.h);
+  ctx.fillStyle = hasReplay ? COLORS.white : "#9ca3af";
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("Instant replay", rep.x + rep.w / 2, rep.y + rep.h / 2 + 4);
+  ctx.font = "12px Arial";
+  ctx.fillStyle = hasReplay ? "#d1d5db" : "#6b7280";
+  ctx.fillText(hasReplay ? "Last play" : "No play saved yet", rep.x + rep.w / 2, rep.y + rep.h / 2 + 20);
+
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(modeBtn.x, modeBtn.y, modeBtn.w, modeBtn.h);
+  ctx.strokeStyle = COLORS.white;
   ctx.strokeRect(modeBtn.x, modeBtn.y, modeBtn.w, modeBtn.h);
   ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
   ctx.fillText(modeLabel, modeBtn.x + modeBtn.w / 2, modeBtn.y + modeBtn.h / 2 + 8);
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(home.x, home.y, home.w, home.h);
   ctx.strokeRect(home.x, home.y, home.w, home.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Back to Home Menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
+  ctx.fillText("Main menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
 }
 
 // Draws a square play diagram inside a button.
@@ -1967,7 +2569,7 @@ function drawDefenseSelectOverlay() {
 }
 
 function drawControlledDefenderMarker() {
-  if (game.mode !== "defense" || game.state === "menu" || game.state === "pauseMenu") return;
+  if (!game.cpuOffense || game.state === "menu" || game.state === "pauseMenu") return;
   const defender = getDefenseControlledPlayer();
   ctx.save();
   ctx.strokeStyle = "#facc15";
@@ -2232,7 +2834,7 @@ function drawMobileTouchControls() {
     ctx.restore();
   }
 
-  if (["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "defenseModeSelect", "prePlayCadence"].includes(game.state)) {
+  if (["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence"].includes(game.state)) {
     const pause = getMobilePauseButtonRect();
     ctx.save();
     ctx.fillStyle = "rgba(17, 24, 39, 0.72)";
@@ -2246,7 +2848,7 @@ function drawMobileTouchControls() {
     ctx.restore();
   }
 
-  if (["playing", "prePlayCadence"].includes(game.state) && game.mode === "defense") {
+  if (["playing", "prePlayCadence"].includes(game.state) && game.cpuOffense) {
     const sw = getMobileSwitchButtonRect();
     ctx.save();
     ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
@@ -2277,8 +2879,163 @@ function drawMobileTouchControls() {
   }
 }
 
+/** Field + players + ball (+ pass-aim) for live play or instant replay. */
+function drawPlayfieldActionLayer(options = {}) {
+  const asReplay = options.replay === true;
+  if (game.mode === "play" && game.playModeLineX) {
+    let lineX = game.playModeLineX;
+    if (!asReplay && game.state === "playModeDowned" && game.fieldCelebrationType === "mud" && game.fieldCelebrationTimer > 0) {
+      lineX += Math.sin(Date.now() / 38) * (12 * game.fieldCelebrationTimer) / 2800;
+    }
+    ctx.save();
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.moveTo(lineX, FIELD.y);
+    ctx.lineTo(lineX, FIELD.y + FIELD.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  drawScoreboard();
+  drawPlayer(player1);
+  drawPlayer(player2);
+  drawPlayer(allyHorse);
+  drawPlayer(allyDonkey);
+  drawPlayer(cluckNorris);
+  drawPlayer(lilTunnelPete);
+  drawControlledDefenderMarker();
+  drawBall();
+  if (!asReplay && game.state === "playModeDowned" && game.fieldCelebrationTimer > 0) {
+    drawFieldCelebrationFx();
+  }
+
+  const showPassAim =
+    (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
+    (game.mode === "play" &&
+      (game.playModeCurrentPlay === "passRight" ||
+        game.playModeCurrentPlay === "passLeft" ||
+        game.playModeCurrentPlay === "barnPlay" ||
+        game.playModeCurrentPlay === "scrambledEggs") &&
+      ball.carrier === player1 &&
+      !ball.inFlight &&
+      game.passPlayDropbackDone &&
+      game.passPlayCanThrow);
+  if (showPassAim && !game.touchControlsEnabled) {
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(player1.x, player1.y);
+    ctx.lineTo(game.mouseX, game.mouseY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(game.mouseX, game.mouseY, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fbbf24";
+    ctx.stroke();
+  }
+}
+
+function getInstantReplayLayout() {
+  const w = 100;
+  const h = 42;
+  const gap = 8;
+  const y = canvas.height - 54;
+  const total = w * 6 + gap * 5;
+  let x = (canvas.width - total) / 2;
+  const next = () => {
+    const r = { x, y, w, h };
+    x += w + gap;
+    return r;
+  };
+  return {
+    skip: next(),
+    rewind: next(),
+    pause: next(),
+    zoomOut: next(),
+    zoomIn: next(),
+    done: next()
+  };
+}
+
+function drawInstantReplayScene() {
+  const frames = game.replayFrames;
+  if (!frames || frames.length === 0) return;
+  const backup = backupFieldStateForReplay();
+  const idx = getReplayFrameIndex();
+  applyReplaySnapshot(frames[idx]);
+
+  ctx.save();
+  const cx = canvas.width * 0.5;
+  const cy = FIELD.y + FIELD.height * 0.48;
+  const z = game.replayZoom || 1;
+  ctx.translate(cx, cy);
+  ctx.scale(z, z);
+  ctx.translate(-cx, -cy);
+
+  drawField();
+  drawPlayfieldActionLayer({ replay: true });
+
+  ctx.restore();
+  applyReplaySnapshot(backup);
+}
+
+function drawInstantReplayHud() {
+  const L = getInstantReplayLayout();
+  const kind = game.instantReplayKind;
+  const title =
+    kind === "touchdown" ? "TOUCHDOWN — Instant replay" : kind === "interception" ? "INTERCEPTION — Instant replay" : "Instant replay";
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.55)";
+  ctx.fillRect(0, 0, canvas.width, 52);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 20px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(title, canvas.width / 2, 33);
+
+  const dur = Math.max(1, (game.replayFrames && game.replayFrames.length) || 1) * (1000 / 60);
+  const t = Math.min(1, game.replayTimeMs / dur);
+  ctx.fillStyle = "rgba(55, 65, 81, 0.9)";
+  ctx.fillRect(120, 44, canvas.width - 240, 6);
+  ctx.fillStyle = "#22c55e";
+  ctx.fillRect(120, 44, (canvas.width - 240) * t, 6);
+
+  function drawBtn(rect, label, sub, dim) {
+    ctx.fillStyle = dim ? "rgba(55, 65, 81, 0.55)" : "rgba(55, 65, 81, 0.92)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = dim ? "#6b7280" : COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = dim ? "#9ca3af" : COLORS.white;
+    ctx.font = "bold 15px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + (sub ? -3 : 5));
+    if (sub) {
+      ctx.font = "10px Arial";
+      ctx.fillStyle = "#d1d5db";
+      ctx.fillText(sub, rect.x + rect.w / 2, rect.y + rect.h / 2 + 11);
+    }
+  }
+
+  drawBtn(L.skip, "Skip", "Space");
+  drawBtn(L.rewind, "Rewind", "R");
+  drawBtn(L.pause, game.replayPaused ? "Play" : "Pause", "P");
+  drawBtn(L.zoomOut, "Zoom −", "−");
+  drawBtn(L.zoomIn, "Zoom +", "+");
+  drawBtn(L.done, "Done", "Esc");
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (game.state === "instantReplay") {
+    drawInstantReplayScene();
+    drawInstantReplayHud();
+    return;
+  }
 
   if (game.state === "menu") {
     drawMenu();
@@ -2305,29 +3062,7 @@ function render() {
 
   drawField();
 
-  // Line of scrimmage indicator for play mode
-  if ((game.mode === "play" || game.mode === "defense") && game.playModeLineX) {
-    ctx.save();
-    ctx.strokeStyle = "#facc15";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([8, 5]);
-    ctx.beginPath();
-    ctx.moveTo(game.playModeLineX, FIELD.y);
-    ctx.lineTo(game.playModeLineX, FIELD.y + FIELD.height);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  drawScoreboard();
-  drawPlayer(player1);
-  drawPlayer(player2);
-  drawPlayer(allyHorse);
-  drawPlayer(allyDonkey);
-  drawPlayer(cluckNorris);
-  drawPlayer(lilTunnelPete);
-  drawControlledDefenderMarker();
-  drawBall();
+  drawPlayfieldActionLayer({ replay: false });
 
   if (game.state === "pauseMenu") {
     drawPauseMenu();
@@ -2336,13 +3071,11 @@ function render() {
   }
 
   if (game.state === "playModePlaySelect") {
-    drawPlaySelectOverlay();
-    drawMobileTouchControls();
-    return;
-  }
-
-  if (game.state === "defenseModeSelect") {
-    drawDefenseSelectOverlay();
+    if (game.cpuOffense) {
+      drawDefenseSelectOverlay();
+    } else {
+      drawPlaySelectOverlay();
+    }
     drawMobileTouchControls();
     return;
   }
@@ -2351,25 +3084,6 @@ function render() {
     drawPrePlayCadenceOverlay();
     drawMobileTouchControls();
     return;
-  }
-
-  const showPassAim = (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
-    (game.mode === "play" && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
-      && ball.carrier === player1 && !ball.inFlight
-      && game.passPlayDropbackDone && game.passPlayCanThrow);
-  if (showPassAim && !game.touchControlsEnabled) {
-    ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.moveTo(player1.x, player1.y);
-    ctx.lineTo(game.mouseX, game.mouseY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.arc(game.mouseX, game.mouseY, 8, 0, Math.PI * 2);
-    ctx.strokeStyle = "#fbbf24";
-    ctx.stroke();
   }
 
   if (game.state === "safetyPopup") {
@@ -2388,18 +3102,21 @@ function render() {
   } else if (game.state === "playModeDowned") {
     const isFourthDown = game.playModeDown >= game.playModeMaxDowns;
     const isInterception = game.playModeLastResultType === "interception";
-    const downedTitle  = isInterception ? "INTERCEPTION" : (game.playModeIncomplete ? "Incomplete!" : "Down!");
-    const detail       = (game.mode === "play" || game.mode === "defense") ? buildPlayResultText() : null;
+    const downedTitle  = isInterception
+      ? "INTERCEPTION"
+      : (game.playModeIncomplete ? "Incomplete!" : "Down!");
+    const detail       = game.mode === "play" ? buildPlayResultText() : null;
     const titleStyle = isInterception ? { color: "#f97316", dimColor: "#f97316" } : null;
+    const showFarmer   = game.mode === "play" && shouldShowFarmerAnnouncerForPlayResult();
     if (game.touchControlsEnabled) {
-      drawCenterMessage(downedTitle, "", detail, "Tap", titleStyle);
+      drawCenterMessage(downedTitle, "", detail, "Tap", titleStyle, showFarmer);
     } else {
       const downPrompt = isInterception
         ? "Press Enter to finish the drive"
-        : game.mode === "defense"
-        ? (isFourthDown ? "Press Enter to finish the drive" : "Press Enter for next defense")
+        : game.cpuOffense
+        ? (isFourthDown ? "Press Enter to finish the drive" : "Press Enter for next play")
         : (isFourthDown ? "Press Enter to continue" : "Press Enter for next play");
-      drawCenterMessage(downedTitle, downPrompt, detail, null, titleStyle);
+      drawCenterMessage(downedTitle, downPrompt, detail, null, titleStyle, showFarmer);
     }
   } else if (game.state === "gameOver") {
     if (game.mode === "play" && !game.winner) {
