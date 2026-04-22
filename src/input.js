@@ -5,6 +5,16 @@ game.touchControlsEnabled = ("ontouchstart" in window) || window.matchMedia("(po
 
 let joystickTouchId = null;
 let suppressClickUntil = 0;
+const PLAY_MODE_PASS_KEYS = new Set([
+  "passRight",
+  "passLeft",
+  "barnPlay",
+  "scrambledEggs",
+  "barnDoorBoot",
+  "pigPenScreen",
+  "cornfieldCross",
+  "roosterRollout"
+]);
 
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
@@ -17,7 +27,7 @@ function getCanvasCoords(e) {
 }
 
 function isPauseableState(state) {
-  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup"].includes(state);
+  return ["playing", "paused", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup", "puntAim"].includes(state);
 }
 
 function togglePauseMenu() {
@@ -59,7 +69,7 @@ function isThrowReady() {
   return game.state === "playing" && (
     (game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) ||
     (game.mode === "play"
-      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
+      && PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
       && ball.carrier === player1 && !ball.inFlight
       && game.passPlayDropbackDone && game.passPlayCanThrow)
   );
@@ -77,6 +87,25 @@ function shouldStartTouchStick(p) {
 function handleCanvasTap(p) {
   game.mouseX = p.x;
   game.mouseY = p.y;
+
+  if (game.state === "patKick" && game.patKickSubPhase === "aim") {
+    commitPatKick();
+    return;
+  }
+
+  if (game.state === "postTouchdownChoice") {
+    const R = getPostTouchdownChoiceRects();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(R.kick)) {
+      beginPatKick();
+      return;
+    }
+    if (hit(R.twoPoint)) {
+      beginTwoPointFieldGoal();
+      return;
+    }
+    return;
+  }
 
   if (game.state === "instantReplay") {
     const L = getInstantReplayLayout();
@@ -126,6 +155,11 @@ function handleCanvasTap(p) {
     if (game.coinTossPhase === "userChooseSide") {
       if (hit(L.offense)) startPlayFromUserCoinChoice("offense");
       else if (hit(L.defense)) startPlayFromUserCoinChoice("defense");
+      return;
+    }
+    if (game.coinTossPhase === "userChooseDirection") {
+      if (hit(L.toRight)) startPlayFromUserCoinDirection("right");
+      else if (hit(L.toLeft)) startPlayFromUserCoinDirection("left");
       return;
     }
     if (game.coinTossPhase === "cpuChose" && hit(L.cpuContinue)) {
@@ -242,6 +276,10 @@ function handleCanvasTap(p) {
   }
   if (game.state === "playModeDowned") {
     if (game.playModeLastResultType === "interception") {
+      if (game.twoPointAttemptActive) {
+        completeTwoPointConversionFailed();
+        return;
+      }
       game.state = "gameOver";
       game.winner = player2;
       return;
@@ -251,7 +289,7 @@ function handleCanvasTap(p) {
     }
     return;
   }
-  if (game.state === "touchdownPopup" || game.state === "safetyPopup") {
+  if (game.state === "touchdownPopup" || game.state === "safetyPopup" || game.state === "patKick") {
     return;
   }
   if (game.state === "gameOver") {
@@ -273,10 +311,30 @@ function handleCanvasTap(p) {
     return;
   }
   if (game.state === "playModePlaySelect") {
+    if (!game.cpuOffense && game.mode === "play" && game.playModeDown === game.playModeMaxDowns && !game.fourthDownPickedGoForIt) {
+      const R = getFourthDownChoiceRects();
+      const fgYards = Math.round(getFourthDownFieldGoalDistanceYards());
+      const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+      if (hit(R.punt)) {
+        beginFourthDownPunt();
+        return;
+      }
+      if (hit(R.fieldGoal) && fgYards <= MAX_FIELD_GOAL_YARDS) {
+        beginFourthDownFieldGoal();
+        return;
+      }
+      if (hit(R.goForIt)) {
+        beginFourthDownGoForIt();
+        return;
+      }
+      return;
+    }
     if (game.cpuOffense) {
       const filt = getDefenseSelectFilterBarRects();
       const options = getDefenseSelectOptionRects();
       const offenseToggle = getDefenseSelectOffenseToggleRect();
+      const rusherToggle = getDefenseSelectRusherToggleRect();
+      const jamToggle = getDefenseSelectJamToggleRect();
       if (p.x >= filt.all.x && p.x <= filt.all.x + filt.all.w && p.y >= filt.all.y && p.y <= filt.all.y + filt.all.h) {
         game.defenseModeDefenseFilter = null;
         return;
@@ -298,6 +356,14 @@ function handleCanvasTap(p) {
       }
       if (p.x >= offenseToggle.x && p.x <= offenseToggle.x + offenseToggle.w && p.y >= offenseToggle.y && p.y <= offenseToggle.y + offenseToggle.h) {
         cycleDefenseModeOffensePlay();
+        return;
+      }
+      if (p.x >= rusherToggle.x && p.x <= rusherToggle.x + rusherToggle.w && p.y >= rusherToggle.y && p.y <= rusherToggle.y + rusherToggle.h) {
+        cycleDefensePassRusher();
+        return;
+      }
+      if (p.x >= jamToggle.x && p.x <= jamToggle.x + jamToggle.w && p.y >= jamToggle.y && p.y <= jamToggle.y + jamToggle.h) {
+        toggleDefensePressJam();
         return;
       }
       return;
@@ -363,12 +429,13 @@ function handleCanvasTap(p) {
     game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
   }
   if (game.state === "playing" && game.mode === "play"
-      && (game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft" || game.playModeCurrentPlay === "barnPlay" || game.playModeCurrentPlay === "scrambledEggs")
+      && PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
       && ball.carrier === player1 && !ball.inFlight
       && game.passPlayDropbackDone && game.passPlayCanThrow) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
-    startPlayModePassThrow(tx, ty);
+    const preferred = game.playModeCurrentPlay === "pigPenScreen" ? "horse" : null;
+    startPlayModePassThrow(tx, ty, preferred);
   }
 }
 
@@ -383,9 +450,31 @@ window.addEventListener("click", (e) => {
   handleCanvasTap(getCanvasCoords(e));
 });
 
+window.addEventListener("mousedown", (e) => {
+  if (game.state !== "puntAim") return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+  if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
+    game.puntAimCharging = true;
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  if (game.state === "puntAim" && game.puntAimCharging) {
+    game.puntAimCharging = false;
+    finalizePuntAimKick();
+  }
+});
+
 canvas.addEventListener("touchstart", (e) => {
   game.touchControlsEnabled = true;
   suppressClickUntil = Date.now() + 800;
+  if (game.state === "puntAim") {
+    game.puntAimCharging = true;
+    if (e.cancelable) e.preventDefault();
+    return;
+  }
   for (const t of e.changedTouches) {
     const p = getCanvasCoords(t);
     if (joystickTouchId === null && shouldStartTouchStick(p)) {
@@ -413,6 +502,12 @@ canvas.addEventListener("touchmove", (e) => {
 }, { passive: false });
 
 function handleTouchEnd(e) {
+  if (game.state === "puntAim" && game.puntAimCharging) {
+    game.puntAimCharging = false;
+    finalizePuntAimKick();
+    if (e.cancelable) e.preventDefault();
+    return;
+  }
   for (const t of e.changedTouches) {
     if (t.identifier === joystickTouchId) {
       joystickTouchId = null;
@@ -469,6 +564,12 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (game.state === "patKick" && game.patKickSubPhase === "aim" && (key === " " || key === "enter")) {
+    e.preventDefault();
+    commitPatKick();
+    return;
+  }
+
   if (game.interceptionPopupTimer > 0) return;
 
   if (game.state === "playCoinToss") {
@@ -497,6 +598,16 @@ window.addEventListener("keydown", (e) => {
       startPlayFromUserCoinChoice("defense");
       return;
     }
+    if (game.coinTossPhase === "userChooseDirection" && (key === "r" || key === "1")) {
+      e.preventDefault();
+      startPlayFromUserCoinDirection("right");
+      return;
+    }
+    if (game.coinTossPhase === "userChooseDirection" && (key === "l" || key === "2")) {
+      e.preventDefault();
+      startPlayFromUserCoinDirection("left");
+      return;
+    }
     if ((key === "enter" || key === " ") && game.coinTossPhase === "cpuChose") {
       e.preventDefault();
       startPlayAfterCpuCoinChoice();
@@ -516,6 +627,44 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (game.state === "postTouchdownChoice") {
+    if (key === "1") {
+      e.preventDefault();
+      beginPatKick();
+      return;
+    }
+    if (key === "2") {
+      e.preventDefault();
+      beginTwoPointFieldGoal();
+      return;
+    }
+  }
+
+  if (
+    game.state === "playModePlaySelect" &&
+    !game.cpuOffense &&
+    game.mode === "play" &&
+    game.playModeDown === game.playModeMaxDowns &&
+    !game.fourthDownPickedGoForIt
+  ) {
+    const fgYards = Math.round(getFourthDownFieldGoalDistanceYards());
+    if (key === "1" || key === "p") {
+      e.preventDefault();
+      beginFourthDownPunt();
+      return;
+    }
+    if ((key === "2" || key === "f") && fgYards <= MAX_FIELD_GOAL_YARDS) {
+      e.preventDefault();
+      beginFourthDownFieldGoal();
+      return;
+    }
+    if (key === "3" || key === "g") {
+      e.preventDefault();
+      beginFourthDownGoForIt();
+      return;
+    }
+  }
+
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
       if (game.playUserTeamId) resetPlayModeTeamScores();
@@ -529,6 +678,10 @@ window.addEventListener("keydown", (e) => {
     }
   } else if ((key === "enter" || key === " ") && game.state === "playModeDowned") {
     if (game.playModeLastResultType === "interception") {
+      if (game.twoPointAttemptActive) {
+        completeTwoPointConversionFailed();
+        return;
+      }
       game.state = "gameOver";
       game.winner = player2;
       return;
@@ -556,6 +709,12 @@ window.addEventListener("keydown", (e) => {
     const idx = parseInt(key, 10) - 1;
     const defKey = order[idx];
     if (defKey) beginSelectedDefense(defKey);
+  } else if (key === "q" && game.state === "playModePlaySelect" && game.cpuOffense) {
+    cycleDefensePassRusher();
+    e.preventDefault();
+  } else if (key === "j" && game.state === "playModePlaySelect" && game.cpuOffense) {
+    toggleDefensePressJam();
+    e.preventDefault();
   } else if ((key === "arrowleft" || key === "arrowright") && game.state === "playModePlaySelect" && !game.cpuOffense) {
     const pages = getPlaySelectPageCount();
     if (pages > 1) {
@@ -583,7 +742,7 @@ window.addEventListener("keydown", (e) => {
     } else if (game.state === "pauseMenu") {
       game.state = game.stateBeforePauseMenu;
       game.stateBeforePauseMenu = null;
-    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup"].includes(game.state)) {
+    } else if (["playing", "paused", "gameOver", "scorePause", "playModeDowned", "playModePlaySelect", "prePlayCadence", "interceptionPopup", "puntAim"].includes(game.state)) {
       game.stateBeforePauseMenu = game.state;
       game.state = "pauseMenu";
     }
@@ -595,7 +754,12 @@ window.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("keyup", (e) => {
-  keys[e.key.toLowerCase()] = false;
+  const key = e.key.toLowerCase();
+  keys[key] = false;
+  if (game.state === "puntAim" && key === " ") {
+    game.puntAimCharging = false;
+    finalizePuntAimKick();
+  }
 });
 
 function updatePlayerInput(dt) {
@@ -624,20 +788,19 @@ function updatePlayerInput(dt) {
 
   const isPlayMode = game.mode === "play" && (
     game.playModePhase === "sweep" ||
-    game.playModeCurrentPlay === "passRight" ||
-    game.playModeCurrentPlay === "passLeft" ||
-    game.playModeCurrentPlay === "scrambledEggs" ||
-    game.playModeCurrentPlay === "barnPlay" ||
+    PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay) ||
     (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
     (game.playModeCurrentPlay === "diveLeft"  && game.playModePhase === "run")
   );
   if (isPlayMode && ball.carrier === allyHorse) {
-    allyHorse.x += dx * allyHorse.speed * dt;
-    allyHorse.y += dy * allyHorse.speed * dt;
+    const rbSpeedMult = 0.82;
+    allyHorse.x += dx * allyHorse.speed * rbSpeedMult * dt;
+    allyHorse.y += dy * allyHorse.speed * rbSpeedMult * dt;
     clampPlayerToField(allyHorse);
   } else if (isPlayMode && ball.carrier === lilTunnelPete) {
-    lilTunnelPete.x += dx * lilTunnelPete.speed * dt;
-    lilTunnelPete.y += dy * lilTunnelPete.speed * dt;
+    const rbSpeedMult = 1.0;
+    lilTunnelPete.x += dx * lilTunnelPete.speed * rbSpeedMult * dt;
+    lilTunnelPete.y += dy * lilTunnelPete.speed * rbSpeedMult * dt;
     clampPlayerToField(lilTunnelPete);
   } else {
     player1.x += dx * player1.speed * dt;

@@ -1,5 +1,5 @@
 // =========================================================
-// Audio — touchdown announcement + animal sounds + menu music + game music
+// Audio — touchdown stinger (animal sounds) + menu music + game music
 // =========================================================
 
 // ── Menu music ────────────────────────────────────────────
@@ -121,71 +121,16 @@ function playBunnySqueak() {
   });
 }
 
-// ── Touchdown voice announcement ──────────────────────────
-
-// Pre-load voices list (browsers load this async)
-let _voices = [];
-function loadVoices() {
-  _voices = speechSynthesis.getVoices();
-}
-if (window.speechSynthesis) {
-  speechSynthesis.addEventListener("voiceschanged", loadVoices);
-  loadVoices();
-}
-
-function pickBestVoice(voices) {
-  // Prefer enhanced / premium / neural voices — they sound far more natural
-  return (
-    voices.find(v => /en[-_]US/i.test(v.lang) && /enhanced|premium|neural/i.test(v.name)) ||
-    voices.find(v => /en[-_]US/i.test(v.lang) && /google/i.test(v.name)) ||
-    voices.find(v => /en[-_]US/i.test(v.lang) && /samantha|alex|tom|nicky|monica/i.test(v.name)) ||
-    voices.find(v => /en[-_]US/i.test(v.lang)) ||
-    voices.find(v => /en/i.test(v.lang))
-  );
-}
-
-function sayTouchdown() {
-  if (!window.speechSynthesis) return;
-  speechSynthesis.cancel();
-
-  // Ellipses and commas create natural breath pauses in most TTS engines
-  const phrases = [
-    "Well... hot dog. TOUCHDOWN, y'all!",
-    "Yeeee-haw! That's a TOUCHDOWN, baby!",
-    "Oh my goodness... he's in! TOUCHDOWN!",
-    "And... he did it! TOUCHDOWN, partner!",
-    "Hoo-wee... that right there... is a TOUCHDOWN!"
-  ];
-  const text = phrases[Math.floor(Math.random() * phrases.length)];
-  const utter = new SpeechSynthesisUtterance(text);
-
-  // Slight random variation each time so it never sounds identical
-  utter.rate   = 0.80 + Math.random() * 0.12;
-  utter.pitch  = 0.88 + Math.random() * 0.18;
-  utter.volume = 1;
-
-  const voices = _voices.length ? _voices : speechSynthesis.getVoices();
-  const best = pickBestVoice(voices);
-  if (best) utter.voice = best;
-
-  speechSynthesis.speak(utter);
-}
-
-// ── Main entry point called on touchdown ─────────────────
+// ── Touchdown stinger (animal only; no voice) ─────────────
 
 function playTouchdownAudio(scorer) {
   resumeAudio();
-  sayTouchdown();
-
-  // Small delay so the animal sound comes just after the voice starts
-  setTimeout(() => {
-    if (scorer === allyHorse) {
-      playHorseNeigh();
-    } else {
-      // Barnaby is a bunny
-      playBunnySqueak();
-    }
-  }, 600);
+  if (scorer === allyHorse) {
+    playHorseNeigh();
+  } else {
+    // Barnaby is a bunny
+    playBunnySqueak();
+  }
 }
 
 /** Urgent "breaking news" style tones when the pass is picked. */

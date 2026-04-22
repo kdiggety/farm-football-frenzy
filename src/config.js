@@ -17,6 +17,35 @@ const MENU_BUTTONS = {
   playMode: { x: 360, y: 320, w: 240, h: 52 }
 };
 
+/** 4th down: Punt vs Field Goal vs Go for it (canvas coords). */
+function getFourthDownChoiceRects() {
+  const w = 258;
+  const h = 72;
+  const gap = 16;
+  const total = w * 3 + gap * 2;
+  const x0 = (canvas.width - total) / 2;
+  const y = 360;
+  return {
+    punt: { x: x0, y, w, h },
+    fieldGoal: { x: x0 + w + gap, y, w, h },
+    goForIt: { x: x0 + (w + gap) * 2, y, w, h }
+  };
+}
+
+/** After TD: choose extra point vs two-point conversion (canvas coords). */
+function getPostTouchdownChoiceRects() {
+  const w = 280;
+  const h = 64;
+  const gap = 28;
+  const total = w * 2 + gap;
+  const x0 = (canvas.width - total) / 2;
+  const y = 418;
+  return {
+    kick: { x: x0, y, w, h },
+    twoPoint: { x: x0 + w + gap, y, w, h }
+  };
+}
+
 // Pause overlay menu (shown when Escape is pressed during a game)
 const PAUSE_MENU_BUTTONS = {
   resume: { x: 330, y: 176, w: 300, h: 48 },
@@ -28,7 +57,16 @@ const PAUSE_MENU_BUTTONS = {
 // Play Mode — 4 plays per page; optional filter (all / run / pass) on the play sheet
 const PLAY_SELECT_PLAYS_PER_PAGE = 4;
 const PLAY_CATEGORY_RUN = ["sweepLeft", "sweepRight", "diveRight", "diveLeft"];
-const PLAY_CATEGORY_PASS = ["passLeft", "passRight", "barnPlay", "scrambledEggs"];
+const PLAY_CATEGORY_PASS = [
+  "passLeft",
+  "passRight",
+  "barnPlay",
+  "scrambledEggs",
+  "barnDoorBoot",
+  "pigPenScreen",
+  "cornfieldCross",
+  "roosterRollout"
+];
 const PLAY_ORDER_ALL = PLAY_CATEGORY_RUN.concat(PLAY_CATEGORY_PASS);
 
 const PLAY_SELECT_LABELS = {
@@ -38,6 +76,10 @@ const PLAY_SELECT_LABELS = {
   passRight: "Pass Right",
   barnPlay: "Barn Play",
   scrambledEggs: "Scrambled Eggs",
+  barnDoorBoot: "Barn Door Boot",
+  pigPenScreen: "Pig Pen Screen",
+  cornfieldCross: "Cornfield Cross",
+  roosterRollout: "Rooster Rollout",
   diveRight: "Stretch Right",
   diveLeft: "Stretch Left"
 };
@@ -102,6 +144,26 @@ function getDefenseSelectOffenseToggleRect() {
     y: P.y + 306,
     w: P.w - 340,
     h: 52
+  };
+}
+
+function getDefenseSelectRusherToggleRect() {
+  const P = DEFENSE_SELECT_PANEL;
+  return {
+    x: P.x + 188,
+    y: P.y + 364,
+    w: 272,
+    h: 34
+  };
+}
+
+function getDefenseSelectJamToggleRect() {
+  const P = DEFENSE_SELECT_PANEL;
+  return {
+    x: P.x + P.w - 188 - 172,
+    y: P.y + 364,
+    w: 172,
+    h: 34
   };
 }
 
@@ -228,7 +290,8 @@ function getMobileSwitchButtonRect() {
 
 const CONFIG = {
   winScore: 5,
-  playModeTouchdownsToWin: 3,
+  /** Play mode: first team to this many points wins (TD = 6, PAT = +1, two-point = +2). */
+  playModePointsToWin: 21,
   playerRadius: 20,
   ballRadius: 9,
   playerSpeed: 112.5,
@@ -237,7 +300,15 @@ const CONFIG = {
   scorePauseMs: 1400,
   stealDistanceMultiplier: 0.8,
   reacquireCooldownMs: 1500,
-  passSpeed: 480
+  passSpeed: 480,
+  /** Play mode: probability [0–1] that a tackle on the ball carrier causes a fumble (loose ball). Set to 0 for no fumbles. */
+  fumbleChanceOnTackle: 0.05,
+  /** How long the on-field “FUMBLE” banner stays visible (ms). */
+  fumbleBannerDurationMs: 4000,
+  /** Punt aim: hold past this (ms) → overcooked (red) short kick. */
+  puntOvercookAfterMs: 1350,
+  /** Punt charge max hold before auto-overcook (ms). */
+  puntMaxHoldMs: 2200
 };
 
 const COLORS = {
@@ -260,21 +331,60 @@ const COLORS = {
   line: "#eef2ff"
 };
 
+/** Extra point timing meter: 0 = left, 1 = right. Green = automatic make; yellow = 50%; red = miss. */
+const PAT_METER = {
+  redLeft: 0.15,
+  yellowLeft: 0.35,
+  yellowRight: 0.65,
+  redRight: 0.85
+};
+
+function getPatMeterForDistanceYards(distanceYards) {
+  const raw = distanceYards || 20;
+  const y = Math.max(20, Math.min(70, raw));
+  const isFieldGoal = typeof game !== "undefined" && game.patKickPointValue === 3;
+  const effectiveYards = Math.max(20, Math.min(70, y + (isFieldGoal ? 8 : 0)));
+  const t = (effectiveYards - 20) / 50;
+  const greenHalf = 0.14 - t * 0.11;   // 20 yds: wide green, 70 yds: very tight green
+  const yellowHalf = greenHalf + (0.07 - t * 0.035);
+  const redHalf = yellowHalf + (0.11 - t * 0.02);
+  return {
+    redLeft: Math.max(0, 0.5 - redHalf),
+    yellowLeft: Math.max(0, 0.5 - yellowHalf),
+    yellowRight: Math.min(1, 0.5 + yellowHalf),
+    redRight: Math.min(1, 0.5 + redHalf)
+  };
+}
+
+function getPatMeterForCurrentKick() {
+  if (typeof game === "undefined") return PAT_METER;
+  return getPatMeterForDistanceYards(game.patKickDistanceYards || 20);
+}
+
+function getPatKickZone(t) {
+  const M = getPatMeterForCurrentKick();
+  if (t < M.redLeft || t > M.redRight) return "red";
+  if (t < M.yellowLeft || t > M.yellowRight) return "yellow";
+  return "green";
+}
+
 // =========================================================
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // ... | "instantReplay" | "touchdownPopup" | "winPopup" | "interceptionPopup"
-  coinTossPhase: null, // null | "pickCall" | "flipping" | "result" | "userChooseSide" | "cpuChose"
+  state: "menu", // ... | "puntAim" | "touchdownPopup" | "postTouchdownChoice" | "patKick" | ...
+  coinTossPhase: null, // null | "pickCall" | "flipping" | "result" | "userChooseSide" | "userChooseDirection" | "cpuChose"
   coinTossCall: null, // null | "heads" | "tails" — player's call before the flip
   coinTossResult: null, // null | "heads" | "tails"
   coinTossWon: null, // null | boolean — call matched flip
   coinTossCpuChoice: null, // null | "offense" | "defense" — what CPU picks if player lost toss
+  coinTossCpuDirection: null, // null | "left" | "right" — which way CPU chooses to attack
+  coinTossUserChoiceSide: null, // null | "offense" | "defense" — cached before direction pick
   coinTossFlipTimer: 0,
   teamSelectUser: null,   // "noFlyZone" | "pasture" | "barnaby" | "professorPig" | null
   playUserTeamId: null,
   playCpuTeamId: null,
-  teamScores: null,       // per-team TD counts when using PLAY_TEAM_IDS
+  teamScores: null,       // per-team points (6 TD, +1 PAT, +2 two-point)
   stateBeforePauseMenu: null,
   mode: null,   // "game" | "passing" | "play"
   winner: null,
@@ -300,16 +410,76 @@ const game = {
   winPopupTimer: 0,
   safetyPopupTimer: 0,
   afterTouchdownAction: null,
+  patKickCursor: 0,
+  patKickDirection: 1,
+  patKickSpeed: 0.95,
+  patKickResultPhase: null,
+  patKickResultTimer: 0,
+  patKickPointValue: 1,
+  patKickDistanceYards: 20,
+  patKickCpuAuto: false,
+  patKickCpuTarget: 0.5,
+  patKickCpuAimDelayMs: 0,
+  patKickFromFourthDown: false,
+  patKickFourthDownSpotX: 0,
+  patKickScorerTeamTag: null,
+  patKickScorerIsPlayer1: true,
+  /** PAT: "aim" (timing meter) → "snap" → "flight" → "result" */
+  patKickSubPhase: "aim",
+  patKickPhaseTimer: 0,
+  patKickFlightT: 0,
+  patKickPendingMade: false,
+  /** 0–1: where ball crosses the goal plane (0.5 = center, good) */
+  patKickBallEndN: 0.5,
+  /** X where the last TD was scored (for 2-pt line: 2 yards back toward midfield). */
+  lastTouchdownSpotX: null,
+  /** True during the one-play two-point attempt. */
+  twoPointAttemptActive: false,
+  /** User chose "Go for it" on 4th — show normal plays; on failure, turnover at spot. */
+  fourthDownGoForIt: false,
+  /** On 4th down offense: false until user picks Punt vs Go for it (then true if Go for it). */
+  fourthDownPickedGoForIt: false,
+  /** Punt aim: 0–1 power while holding Space / pointer. */
+  puntAimCharge: 0,
+  puntAimHoldMs: 0,
+  puntAimOvercooked: false,
+  puntAimCharging: false,
+  kickoffActive: false,
+  kickoffReceivingCpuOffense: false,
+  puntDistanceYards: 38,
+  puntPhase: null,
+  puntPhaseTimer: 0,
+  puntLandingX: 0,
+  puntFlightT: 0,
+  puntBlocked: false,
+  puntKickReleased: false,
+  puntReturnMs: 0,
+  puntReturnStartX: 0,
+  puntPunterAssist: false,
   playModeDefense: null,       // "A" | "B"
   defenseReactionTimer: 0,     // ms remaining before Defense A's Hee Haw reacts to the WR
   passDefCovering: null,       // which defender covers WR on Defense B
   passDefRushing: null,        // which defender rushes QB on Defense B
+  passDefCoverHorseId: "allyDonkey",
+  passDefCoverPeteId: "cluckNorris",
   playModeIncomplete: false,   // true when last play ended as an incomplete pass
   playModeLastYards: 0,        // yards gained/lost on the last play
   playModeLastPlayType: null,  // "sweepRight" | "sweepLeft" | "passRight" | "passLeft" | "barnPlay" | "scrambledEggs" | null
   playModeLastResultType: "noGain", // "gain" | "loss" | "noGain" | "incomplete" | "sack" | "interception"
   interceptionPopupTimer: 0,
+  /** Live play: brief “FUMBLE” overlay after a fumble (game stays playing). */
+  fumblePopupTimer: 0,
+  /** True while the ball is loose from a fumble (next touch resolves the play). */
+  playModeBallLooseFromFumble: false,
+  /** Downed overlay: show "Tackled!" after someone recovers a loose fumble (they're down at the spot). */
+  playModeFumbleRecoveryTackled: false,
+  /** After defensive fumble recovery: Enter runs turnover drive instead of next down. */
+  playModePendingFumbleTurnover: false,
+  /** Where to send possession when playModePendingFumbleTurnover clears (CPU offense next vs user). */
+  playModeFumbleTurnoverNextCpuOffense: false,
   turnoverSeriesActive: false,
+  /** Direction the user's team attacks when on offense (1 = right, -1 = left). */
+  userOffenseDirection: 1,
   passPlayDropbackDone: false,   // true once QB has finished auto-dropping back
   passPlayCanThrow: true,        // false once QB has crossed the line of scrimmage
   passPlayTargetReceiver: null,  // "horse" | "pete" — intended receiver on the current throw
@@ -327,6 +497,9 @@ const game = {
   defenseModeDefenseFilter: null, // null = all | "run" | "pass" (CPU offense / pick defense)
   cpuOffense: false, // true = you defend, CPU runs offense (same flow as former "Defense mode")
   defenseModeControlledPlayerId: "player2",
+  defenseUserRusherId: "player2",
+  defensePressJam: false,
+  passJamWindowMs: 0,
   defenseModeCpuPlay: null,
   defenseModeSelectedOffensePlay: "random",
   touchControlsEnabled: false,
