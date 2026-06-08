@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Farm Football Frenzy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Merriweather:wght@700&family=Oswald:wght@700&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg: #1f2937;
@@ -91,8 +94,8 @@
   <div class="game-shell">
     <canvas id="game" width="960" height="540" aria-label="Farm Football Frenzy"></canvas>
     <div class="help">
-      <strong>Desktop:</strong> W A S D to move; click to throw; when you're on defense vs CPU offense, Space switches defenders. |
-      <strong>Mobile:</strong> left joystick to move; tap the field to throw; tap Switch to change defenders. |
+      <strong>Desktop:</strong> W A S D to move; click to throw; Space switches defenders on defense vs CPU offense; on Barn Door Boot offense (before rollout), Space flips the boot direction. |
+      <strong>Mobile:</strong> left joystick to move; tap the field to throw; tap Switch to change defenders (on Barn Door Boot offense before the rollout, Switch flips which way the QB rolls). |
       <strong>Restart:</strong> R after game over
     </div>
   </div>
@@ -103,10 +106,14 @@
 
   <script src="src/config.js"></script>
   <script src="src/teams.js"></script>
+  <script src="src/difficulty.js"></script>
+  <script src="src/stats.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/input.js"></script>
   <script src="src/replay.js"></script>
   <script src="src/render.js"></script>
   <script src="src/game.js"></script>
+  <script src="src/playRoutes.js"></script>
+  <script src="src/formations.js"></script>
 </body>
 </html>

@@ -88,13 +88,13 @@ function getMidfieldOffenseTeamId() {
 function drawMidfieldOffenseLogo() {
   const teamId = getMidfieldOffenseTeamId();
   const img = teamBannerImages[teamId];
-  const midX = FIELD.x + FIELD.width / 2;
+  const midX = getFieldGoalPostsMidlineX();
   const midY = FIELD.y + FIELD.height / 2;
-  const logoR = 58;
+  const logoR = 70;
 
   ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
-  ctx.ellipse(midX, midY + 30, 72, 18, 0, 0, Math.PI * 2);
+  ctx.ellipse(midX, midY + 30, 86, 20, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (!img || !img.complete || !img.naturalWidth) return;
@@ -444,19 +444,28 @@ function drawField() {
     }
   }
 
-  // End zones
-  drawRect(FIELD.x, FIELD.y, FIELD.endZoneWidth, FIELD.height, COLORS.leftEndZone);
-  drawRect(FIELD.x + FIELD.width - FIELD.endZoneWidth, FIELD.y, FIELD.endZoneWidth, FIELD.height, COLORS.rightEndZone);
+  // End zones — team colors (left = player2 side, right = player1 side)
+  const leftEndZoneTeamId = getLeftEndZoneTeamId();
+  const rightEndZoneTeamId = getRightEndZoneTeamId();
+  drawRect(FIELD.x, FIELD.y, FIELD.endZoneWidth, FIELD.height, getTeamEndZoneColor(leftEndZoneTeamId));
+  drawRect(
+    FIELD.x + FIELD.width - FIELD.endZoneWidth,
+    FIELD.y,
+    FIELD.endZoneWidth,
+    FIELD.height,
+    getTeamEndZoneColor(rightEndZoneTeamId)
+  );
 
   // Boundary lines
   ctx.strokeStyle = COLORS.line;
   ctx.lineWidth = 4;
   ctx.strokeRect(FIELD.x, FIELD.y, FIELD.width, FIELD.height);
 
-  // Midfield
+  // Midfield (same X as midpoint between goal posts)
+  const midfieldX = getFieldGoalPostsMidlineX();
   ctx.beginPath();
-  ctx.moveTo(FIELD.x + FIELD.width / 2, FIELD.y);
-  ctx.lineTo(FIELD.x + FIELD.width / 2, FIELD.y + FIELD.height);
+  ctx.moveTo(midfieldX, FIELD.y);
+  ctx.lineTo(midfieldX, FIELD.y + FIELD.height);
   ctx.stroke();
 
   // Yard lines
@@ -550,8 +559,8 @@ function drawField() {
     ctx.restore();
   }
 
-  const leftGoalLineX = FIELD.x + 14;
-  const rightGoalLineX = FIELD.x + FIELD.width - 14;
+  const leftGoalLineX = FIELD.x + FIELD_GOAL_POST_INSET_PX;
+  const rightGoalLineX = FIELD.x + FIELD.width - FIELD_GOAL_POST_INSET_PX;
   drawGoalPost(leftGoalLineX, 1);
   drawGoalPost(rightGoalLineX, -1);
 
@@ -576,34 +585,39 @@ function drawField() {
   drawHayBale(FIELD.x + 18, FIELD.y + FIELD.height + 36);
   drawHayBale(FIELD.x + FIELD.width - 64, FIELD.y + FIELD.height + 36);
 
-  // End zone labels: defense left, offense right (player1 squad = offense, player2 = defense)
-  let leftEndZoneName = "Professor Pig";
-  let rightEndZoneName = "Barnaby";
-  if (game.playUserTeamId && game.playCpuTeamId) {
-    if (player1.teamTag && player2.teamTag) {
-      leftEndZoneName = TEAMS[player2.teamTag].name;
-      rightEndZoneName = TEAMS[player1.teamTag].name;
-    } else {
-      leftEndZoneName = TEAMS[game.playCpuTeamId].name;
-      rightEndZoneName = TEAMS[game.playUserTeamId].name;
-    }
-  }
-  const longest = Math.max(leftEndZoneName.length, rightEndZoneName.length);
-  const fontPx = longest > 20 ? 13 : longest > 14 ? 16 : 22;
-  ctx.fillStyle = COLORS.white;
-  ctx.font = `bold ${fontPx}px Arial`;
-  ctx.textAlign = "center";
-  ctx.save();
-  ctx.translate(FIELD.x + FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText(leftEndZoneName, 0, 0);
-  ctx.restore();
+  // End zone labels — each team uses its own font
+  const leftEndZoneName = TEAMS[leftEndZoneTeamId]?.name || "Defense";
+  const rightEndZoneName = TEAMS[rightEndZoneTeamId]?.name || "Offense";
 
-  ctx.save();
-  ctx.translate(FIELD.x + FIELD.width - FIELD.endZoneWidth / 2, FIELD.y + FIELD.height / 2);
-  ctx.rotate(Math.PI / 2);
-  ctx.fillText(rightEndZoneName, 0, 0);
-  ctx.restore();
+  function drawEndZoneLabel(cx, cy, rotation, teamId, name) {
+    ctx.save();
+    ctx.fillStyle = COLORS.white;
+    ctx.font = getEndZoneLabelFont(teamId, name.length);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1;
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.fillText(name, 0, 0);
+    ctx.restore();
+  }
+
+  drawEndZoneLabel(
+    FIELD.x + FIELD.endZoneWidth / 2,
+    FIELD.y + FIELD.height / 2,
+    -Math.PI / 2,
+    leftEndZoneTeamId,
+    leftEndZoneName
+  );
+  drawEndZoneLabel(
+    FIELD.x + FIELD.width - FIELD.endZoneWidth / 2,
+    FIELD.y + FIELD.height / 2,
+    Math.PI / 2,
+    rightEndZoneTeamId,
+    rightEndZoneName
+  );
 }
 
 function drawHayBale(x, y) {
@@ -621,8 +635,8 @@ function drawHayBale(x, y) {
   ctx.stroke();
 }
 
-function drawShadow(x, y, radiusX, radiusY, c = ctx) {
-  c.fillStyle = COLORS.shadow;
+function drawShadow(x, y, radiusX, radiusY, c = ctx, fillStyle = COLORS.shadow) {
+  c.fillStyle = fillStyle;
   c.beginPath();
   c.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
   c.fill();
@@ -643,7 +657,34 @@ function drawPlayer(player, renderCtx) {
   const appearanceId = player.appearanceId || player.id;
   const R = player.radius;
   const sc = R / 20;
-  drawShadow(player.x, player.y + R + 8 * sc, R * 0.9, 7 * sc, c);
+
+  let dropbackDx = 0;
+  let dropbackDy = 0;
+  if (
+    player === player1 &&
+    game.mode === "play" &&
+    game.state === "prePlayCadence" &&
+    typeof getQbDropbackPreviewRenderPoint === "function"
+  ) {
+    const pt = getQbDropbackPreviewRenderPoint(game.playModeCurrentPlay);
+    if (pt) {
+      dropbackDx = pt.x - player.x;
+      dropbackDy = pt.y - player.y;
+    }
+  }
+  if (dropbackDx !== 0 || dropbackDy !== 0) {
+    c.save();
+    c.translate(dropbackDx, dropbackDy);
+  }
+
+  drawShadow(
+    player.x,
+    player.y + R + 8 * sc,
+    R * 0.9,
+    7 * sc,
+    c,
+    getPlayerShadowColor(player)
+  );
 
   // Body
   c.fillStyle = player.color;
@@ -651,8 +692,177 @@ function drawPlayer(player, renderCtx) {
   c.arc(player.x, player.y, R, 0, Math.PI * 2);
   c.fill();
 
-  // Ears / snout / unique feature details (matches in-game colors)
-  if (appearanceId === "player1") {
+  // New animal roster (drawn before legacy appearanceIds)
+  if (appearanceId === "tuckDuck") {
+    c.fillStyle = "#f59e0b";
+    c.beginPath();
+    c.ellipse(player.x, player.y - R - 4 * sc, 7 * sc, 5 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(255,255,255,0.35)";
+    c.beginPath();
+    c.ellipse(player.x - 10 * sc, player.y + 2 * sc, 9 * sc, 5 * sc, -0.2, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "daxBadger") {
+    c.fillStyle = "#e7e5e4";
+    c.beginPath();
+    c.ellipse(player.x, player.y - 8 * sc, 10 * sc, 4 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(player.x, player.y - 4 * sc, 4 * sc, 7 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "sidSkunk") {
+    c.fillStyle = "rgba(250,250,249,0.95)";
+    c.beginPath();
+    c.ellipse(player.x, player.y - 1 * sc, 6 * sc, 15 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "bessCow") {
+    c.fillStyle = "#1c1917";
+    c.beginPath();
+    c.ellipse(player.x - 5 * sc, player.y, 6 * sc, 8 * sc, 0, 0, Math.PI * 2);
+    c.ellipse(player.x + 5 * sc, player.y, 5 * sc, 7 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = "#a8a29e";
+    c.lineWidth = 1.2 * sc;
+    c.beginPath();
+    c.moveTo(player.x - 8 * sc, player.y - R);
+    c.lineTo(player.x - 12 * sc, player.y - R - 10 * sc);
+    c.moveTo(player.x + 8 * sc, player.y - R);
+    c.lineTo(player.x + 12 * sc, player.y - R - 10 * sc);
+    c.stroke();
+  } else if (appearanceId === "boBoar") {
+    c.fillStyle = "#3f1f0f";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 6 * sc, 8 * sc, 6 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#fef3c7";
+    c.beginPath();
+    c.moveTo(player.x - 14 * sc, player.y + 2 * sc);
+    c.lineTo(player.x - 20 * sc, player.y + 2 * sc);
+    c.lineTo(player.x - 16 * sc, player.y + 4 * sc);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(player.x + 14 * sc, player.y + 2 * sc);
+    c.lineTo(player.x + 20 * sc, player.y + 2 * sc);
+    c.lineTo(player.x + 16 * sc, player.y + 4 * sc);
+    c.closePath();
+    c.fill();
+  } else if (appearanceId === "moleMole") {
+    c.fillStyle = "#fecdd3";
+    c.beginPath();
+    c.moveTo(player.x, player.y + 6 * sc);
+    for (let a = 0; a < 5; a++) {
+      const ang = (a / 5) * Math.PI * 2 - Math.PI / 2;
+      const px = player.x + Math.cos(ang) * 5 * sc;
+      const py = player.y + 4 * sc + Math.sin(ang) * 3 * sc;
+      c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fill();
+    c.fillStyle = "#4b5563";
+    c.beginPath();
+    c.ellipse(player.x, player.y - R, 3 * sc, 2.5 * sc, 0, 0, Math.PI * 2);
+    c.ellipse(player.x + 7 * sc, player.y - R, 2.2 * sc, 2.2 * sc, 0, 0, Math.PI * 2);
+    c.ellipse(player.x - 7 * sc, player.y - R, 2.2 * sc, 2.2 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "bamBull") {
+    c.strokeStyle = "#1c1917";
+    c.lineWidth = 2 * sc;
+    c.beginPath();
+    c.arc(player.x - 12 * sc, player.y - R, 6 * sc, Math.PI * 0.1, Math.PI * 0.9);
+    c.stroke();
+    c.beginPath();
+    c.arc(player.x + 12 * sc, player.y - R, 6 * sc, Math.PI * 0.1, Math.PI * 0.9);
+    c.stroke();
+    c.strokeStyle = "#d97706";
+    c.beginPath();
+    c.arc(player.x, player.y - 2 * sc, 4 * sc, 0, Math.PI * 2);
+    c.stroke();
+  } else if (appearanceId === "buckRam") {
+    c.fillStyle = "#2d1f14";
+    for (let s = -1; s <= 1; s += 2) {
+      c.beginPath();
+      c.arc(player.x + s * 10 * sc, player.y - R, 5 * sc, 0, Math.PI * 2);
+      c.arc(player.x + s * 14 * sc, player.y - R - 8 * sc, 4 * sc, 0, Math.PI * 2);
+      c.fill();
+    }
+  } else if (appearanceId === "gusGopher") {
+    c.fillStyle = "#fed7aa";
+    c.beginPath();
+    c.rect(player.x - 3 * sc, player.y + 2 * sc, 6 * sc, 4 * sc);
+    c.fill();
+    c.fillStyle = "#fefce8";
+    c.beginPath();
+    c.ellipse(player.x - 7 * sc, player.y - R, 2.2 * sc, 3.5 * sc, -0.1, 0, Math.PI * 2);
+    c.ellipse(player.x + 7 * sc, player.y - R, 2.2 * sc, 3.5 * sc, 0.1, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "halHog") {
+    c.fillStyle = "#f472b6";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 3 * sc, 14 * sc, 8 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(player.x - 14 * sc, player.y + 3 * sc, 5 * sc, 3 * sc, 0, 0, Math.PI * 2);
+    c.ellipse(player.x + 14 * sc, player.y + 3 * sc, 5 * sc, 3 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "jebGoat") {
+    c.fillStyle = "#e7e5e4";
+    c.beginPath();
+    c.moveTo(player.x - 3 * sc, player.y - R);
+    c.lineTo(player.x - 18 * sc, player.y - R - 6 * sc);
+    c.lineTo(player.x - 6 * sc, player.y - R);
+    c.closePath();
+    c.moveTo(player.x + 3 * sc, player.y - R);
+    c.lineTo(player.x + 18 * sc, player.y - R - 6 * sc);
+    c.lineTo(player.x + 6 * sc, player.y - R);
+    c.closePath();
+    c.fill();
+  } else if (appearanceId === "kitCat") {
+    c.beginPath();
+    c.moveTo(player.x - 8 * sc, player.y - R + 2 * sc);
+    c.lineTo(player.x - 14 * sc, player.y - R - 12 * sc);
+    c.lineTo(player.x - 2 * sc, player.y - R);
+    c.closePath();
+    c.moveTo(player.x + 8 * sc, player.y - R + 2 * sc);
+    c.lineTo(player.x + 14 * sc, player.y - R - 12 * sc);
+    c.lineTo(player.x + 2 * sc, player.y - R);
+    c.closePath();
+    c.fillStyle = "#1f2937";
+    c.fill();
+    c.strokeStyle = "rgba(255,255,255,0.75)";
+    c.lineWidth = 0.6 * sc;
+    for (let t = 0; t < 3; t++) {
+      c.beginPath();
+      c.moveTo(player.x - R, player.y - 1 * sc - t * 1.2 * sc);
+      c.lineTo(player.x - R - 5 * sc, player.y - t * 1.2 * sc);
+      c.stroke();
+    }
+    for (let t = 0; t < 3; t++) {
+      c.beginPath();
+      c.moveTo(player.x + R, player.y - 1 * sc - t * 1.2 * sc);
+      c.lineTo(player.x + R + 5 * sc, player.y - t * 1.2 * sc);
+      c.stroke();
+    }
+  } else if (appearanceId === "squadA") {
+    c.fillStyle = player.color;
+    c.beginPath();
+    c.ellipse(player.x, player.y - 4 * sc, 6 * sc, 5 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(255,255,255,0.25)";
+    c.beginPath();
+    c.ellipse(player.x, player.y + 4 * sc, 4 * sc, 3 * sc, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "squadB") {
+    c.fillStyle = player.color;
+    c.beginPath();
+    c.ellipse(player.x - 6 * sc, player.y - 6 * sc, 3 * sc, 5 * sc, -0.2, 0, Math.PI * 2);
+    c.ellipse(player.x + 6 * sc, player.y - 6 * sc, 3 * sc, 5 * sc, 0.2, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(0,0,0,0.2)";
+    c.beginPath();
+    c.arc(player.x, player.y + 3 * sc, 3 * sc, 0, Math.PI * 2);
+    c.fill();
+  } else if (appearanceId === "player1") {
     c.fillStyle = "#93c5fd";
     c.beginPath();
     c.ellipse(player.x - 8 * sc, player.y - 20 * sc, 5 * sc, 10 * sc, -0.3, 0, Math.PI * 2);
@@ -946,6 +1156,10 @@ function drawPlayer(player, renderCtx) {
     c.font = "bold 12px Arial";
     c.fillText("BALL", player.x, player.y - 44 * sc);
   }
+
+  if (dropbackDx !== 0 || dropbackDy !== 0) {
+    c.restore();
+  }
 }
 
 function drawBall() {
@@ -1023,14 +1237,29 @@ function drawScoreboard() {
     ctx.textAlign = "center";
     ctx.fillStyle = "#e5e7eb";
     ctx.font = "14px Arial";
+    const sessionLabel = game.playSessionKind ? getPlaySessionLabel(game.playSessionKind) : "Play Mode";
     const modeLabel = game.cpuOffense
       ? (game.turnoverSeriesActive ? "Turnover — you're on D" : "CPU offense — you're on D")
-      : "Play Mode";
+      : sessionLabel;
+    const scoreLine = playSessionTracksFullGameScore()
+      ? ` · First to ${CONFIG.playModePointsToWin} pts · ${getDifficultyLabel(game.gameSettings.difficulty)}`
+      : "";
     ctx.fillText(
-      `${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns} · First to ${CONFIG.playModePointsToWin} pts`,
+      `${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns}${scoreLine}`,
       canvas.width / 2,
       54
     );
+    if (playSessionUsesGameClock && game.clockInitialized) {
+      const qLabel = game.clockQuarter >= 5 ? "OT" : `Q${game.clockQuarter}`;
+      const clockColor = game.clockExpiredPending ? "#fca5a5" : "#fde68a";
+      ctx.fillStyle = clockColor;
+      ctx.font = "bold 15px Arial";
+      ctx.fillText(
+        `${qLabel}  ${formatGameClockMs(game.clockMsRemaining)}`,
+        canvas.width / 2,
+        72
+      );
+    }
   }
 }
 
@@ -1123,6 +1352,51 @@ function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyl
     ctx.font = "bold 20px Arial";
     ctx.fillText(buttonText, textCx, by + bh / 2 + 7);
   }
+}
+
+function drawKickoffRestrainingLine() {
+  const lineX = game.kickoffSequenceMinimumLineX;
+  if (!lineX) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(239, 68, 68, 0.92)";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([10, 7]);
+  ctx.beginPath();
+  ctx.moveTo(lineX, FIELD.y);
+  ctx.lineTo(lineX, FIELD.y + FIELD.height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "bold 12px Arial";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(254, 226, 226, 0.95)";
+  ctx.fillText("30", lineX, FIELD.y + 18);
+  ctx.restore();
+}
+
+function drawKickoffFlagPopup() {
+  drawFieldAndPlayAction();
+  drawKickoffRestrainingLine();
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 72px Arial";
+  ctx.strokeStyle = "#fbbf24";
+  ctx.lineWidth = 5;
+  ctx.strokeText("FLAG", cx, cy - 28);
+  ctx.fillStyle = "#fef08a";
+  ctx.fillText("FLAG", cx, cy - 28);
+  ctx.font = "bold 20px Arial";
+  ctx.fillStyle = "#fecaca";
+  ctx.fillText(game.kickoffFlagMessage || "Illegal kickoff", cx, cy + 34);
+  ctx.font = "15px Arial";
+  ctx.fillStyle = "#e2e8f0";
+  ctx.fillText("Receiving team at the 35", cx, cy + 64);
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
 }
 
 function drawSafetyPopup() {
@@ -1383,7 +1657,7 @@ function drawPuntAimOverlay() {
   const cleanYds = Math.round(cleanMin + charge * (cleanMax - cleanMin));
   const overcookYds = Math.round(cleanMin + overcookCharge * (cleanMax - cleanMin));
   const ydsUntilRed = Math.max(0, overcookYds - cleanYds);
-  const isKickoff = !!game.kickoffActive;
+  const isKickoff = game.state === "kickoffAim";
 
   ctx.save();
   ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
@@ -1428,8 +1702,9 @@ function drawPuntAimOverlay() {
   ctx.fillText("Power now moves up/down · orange line is overcook point", cx, barY + barH + 66);
   ctx.fillStyle = "#e2e8f0";
   ctx.font = "bold 15px Arial";
+  const estOwnYards = resolveKickoffLandingYardsFromOwnGoal(charge, overc);
   const estLabel = isKickoff
-    ? `Kickoff est. start: own ${Math.round(22 + charge * 16)} (${Math.round(40 - (22 + charge * 16))} yds to auto-40)`
+    ? `Kickoff est. start: own ${estOwnYards} (${Math.max(0, 40 - estOwnYards)} yds to auto-40)`
     : `~${cleanYds} yd clean carry (${ydsUntilRed} yds until red)`;
   ctx.fillText(estLabel, cx, barY - 28);
   ctx.font = "12px Arial";
@@ -1726,8 +2001,8 @@ function drawPatGoalLogo(cx, crossY) {
 
   ctx.save();
   if (img && img.complete && img.naturalWidth) {
-    const maxW = uw * 1.55;
-    const maxH = uh * 0.68;
+    const maxW = uw * 1.88;
+    const maxH = uh * 0.8;
     let lw = maxW;
     let lh = (img.naturalHeight / img.naturalWidth) * lw;
     if (lh > maxH) {
@@ -2282,7 +2557,7 @@ function drawMenu() {
   ctx.fillText("Farm Football Frenzy", canvas.width / 2, 160);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Pick a team, then play offense or defense after the coin toss.", canvas.width / 2, 210);
+  ctx.fillText("Press Play — pick a mode, team, and go.", canvas.width / 2, 210);
 
   const pl = MENU_BUTTONS.playMode;
 
@@ -2295,9 +2570,100 @@ function drawMenu() {
   ctx.font = "bold 22px Arial";
   ctx.fillText("Play", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
 
+  const st = MENU_BUTTONS.settings;
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(st.x, st.y, st.w, st.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(st.x, st.y, st.w, st.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Settings", st.x + st.w / 2, st.y + st.h / 2 + 8);
+
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("4 downs from the red 20-yard line.", canvas.width / 2, 470);
+  ctx.fillText("Offense, defense, whole game, or moments.", canvas.width / 2, 470);
+}
+
+function drawPlaySessionButton(rect, label, sub, active) {
+  ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+  ctx.lineWidth = active ? 3 : 2;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 15px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + 18);
+  ctx.font = "11px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText(sub, rect.x + rect.w / 2, rect.y + rect.h - 10);
+}
+
+function drawPlaySessionSelect() {
+  drawMenuBackground();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 34px Arial";
+  ctx.fillText("Choose how to play", canvas.width / 2, 58);
+  ctx.font = "15px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Pick a mode, then choose your team.", canvas.width / 2, 92);
+
+  const L = getPlaySessionSelectLayout();
+  const mx = game.mouseX;
+  const my = game.mouseY;
+  const hit = (r) => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+
+  for (const key of PLAY_SESSION_TOP_KEYS) {
+    const preset = PLAY_SESSION_TOP[key];
+    drawPlaySessionButton(L[key], preset.label, preset.sub, hit(L[key]));
+  }
+
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 14px Arial";
+  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+}
+
+function drawPlayMomentSelect() {
+  drawMenuBackground();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 34px Arial";
+  ctx.fillText("Play Moments", canvas.width / 2, 58);
+  ctx.font = "15px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Pick a situational drill.", canvas.width / 2, 88);
+
+  const L = getPlayMomentSelectLayout();
+  const mx = game.mouseX;
+  const my = game.mouseY;
+  const hit = (r) => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+
+  for (const key of PLAY_MOMENT_KEYS) {
+    const preset = PLAY_MOMENT_KINDS[key];
+    drawPlaySessionButton(L[key], preset.label, preset.sub, hit(L[key]));
+  }
+
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 14px Arial";
+  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
 }
 
 function drawTeamSelectOverlay() {
@@ -2305,19 +2671,23 @@ function drawTeamSelectOverlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const L = getTeamSelectLayout();
+  const teamId = getTeamIdForTeamSelectPage(game.teamSelectPage);
+  const pages = getTeamSelectPageCount();
+  const page = game.teamSelectPage;
+
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 32px Arial";
-  ctx.fillText("Pick your team", canvas.width / 2, 58);
+  ctx.fillText("Pick your team", canvas.width / 2, 50);
 
-  function drawCard(rect, teamId, selected) {
-    const pad = 10;
-    const bannerH = 68;
-    const nameStripH = 22;
+  function drawCard(rect, tid, selected) {
+    const pad = L.pad;
+    const bannerH = L.bannerH;
+    const nameStripH = L.nameStripH;
     const PR = CONFIG.playerRadius;
     ctx.fillStyle = "#374151";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    drawTeamBannerImage(teamId, rect.x + pad, rect.y + pad, rect.w - pad * 2, bannerH);
+    drawTeamBannerImage(tid, rect.x + pad, rect.y + pad, rect.w - pad * 2, bannerH);
     ctx.fillStyle = "#1f2937";
     ctx.fillRect(rect.x + pad, rect.y + pad + bannerH, rect.w - pad * 2, nameStripH);
     ctx.strokeStyle = selected ? "#fbbf24" : COLORS.white;
@@ -2325,43 +2695,60 @@ function drawTeamSelectOverlay() {
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
     ctx.textAlign = "center";
     ctx.fillStyle = COLORS.white;
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(TEAMS[teamId].name, rect.x + rect.w / 2, rect.y + pad + bannerH + 17);
-    const r = TEAMS[teamId].roster;
-    const slots = ["qb", "wr", "flex"];
+    ctx.font = "bold 20px Arial";
+    ctx.fillText(TEAMS[tid].name, rect.x + rect.w / 2, rect.y + pad + bannerH + 19);
+    const r = TEAMS[tid].roster;
+    const slots = ROSTER_ALL_KEYS;
+    const slotLabelByKey = {
+      qb: "QB",
+      wr: "WR",
+      flex: "FLEX",
+      p4: "RB",
+      p5: "C"
+    };
     const innerW = rect.w - pad * 2;
-    const gutter = 6;
-    const colW = (innerW - gutter * 2) / 3;
+    const gutter = 2;
+    const colW = (innerW - gutter * 4) / 5;
     const rosterTop = rect.y + pad + bannerH + nameStripH + 4;
     const rosterBot = rect.y + rect.h - pad;
-    const labelBaseline = rosterTop + 11;
-    const maxLabelW = colW - 4;
+    const nameLine1Y = rosterTop + 5;
+    const nameLine2Y = rosterTop + 12;
+    const maxLabelW = colW - 2;
     const bw = TEAM_SELECT_PLAYER_BUFFER.width;
     const bh = TEAM_SELECT_PLAYER_BUFFER.height;
-    let previewScale = Math.min((colW - 2) / bw, (rosterBot - labelBaseline - 6) / bh, 1.08);
-    previewScale = Math.max(0.42, previewScale);
+    let previewScale = Math.min((colW - 1) / bw, (rosterBot - nameLine2Y - 2) / bh, 0.85);
+    previewScale = Math.max(0.32, previewScale);
     let destY = rosterBot - bh * previewScale - 2;
-    const minDestY = labelBaseline + 8;
+    const minDestY = nameLine2Y + 8;
     if (destY < minDestY) {
       destY = minDestY;
-      previewScale = Math.max(0.28, (rosterBot - destY - 2) / bh);
+      previewScale = Math.max(0.35, (rosterBot - destY - 2) / bh);
     }
     const pctx = TEAM_SELECT_PLAYER_CTX;
     pctx.setTransform(1, 0, 0, 1, 0, 0);
     pctx.imageSmoothingEnabled = true;
     if ("imageSmoothingQuality" in pctx) pctx.imageSmoothingQuality = "high";
     function fitRosterName(text) {
-      ctx.font = "bold 9px Arial";
+      ctx.font = "bold 7.5px Arial";
       if (ctx.measureText(text).width <= maxLabelW) return text;
       let s = text;
       while (s.length > 1 && ctx.measureText(`${s}…`).width > maxLabelW) s = s.slice(0, -1);
       return `${s}…`;
     }
     ctx.fillStyle = "#e5e7eb";
-    for (let i = 0; i < 3; i++) {
-      const cx = rect.x + pad + gutter + colW * (i + 0.5);
+    for (let i = 0; i < 5; i++) {
+      const cx = rect.x + pad + i * (colW + gutter) + colW / 2;
       const entry = r[slots[i]];
-      ctx.fillText(fitRosterName(entry.displayLabel), cx, labelBaseline);
+      ctx.fillText(fitRosterName(entry.displayLabel), cx, nameLine1Y);
+      ctx.save();
+      ctx.fillStyle = "#fef08a";
+      ctx.font = "bold 8px Arial";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+      ctx.shadowBlur = 2;
+      ctx.fillText(slotLabelByKey[slots[i]] || slots[i].toUpperCase(), cx, nameLine2Y);
+      ctx.restore();
+      ctx.fillStyle = "#e5e7eb";
+      ctx.font = "bold 7.5px Arial";
       pctx.clearRect(0, 0, bw, bh);
       drawPlayer(
         {
@@ -2388,8 +2775,43 @@ function drawTeamSelectOverlay() {
   }
 
   const yUser = game.teamSelectUser;
-  for (const id of PLAY_TEAM_IDS) {
-    drawCard(L[id], id, yUser === id);
+  const selected = yUser === teamId;
+  const mx = game.mouseX;
+  const my = game.mouseY;
+  const big = L.bigCard;
+  const hoverBig =
+    mx >= big.x && mx <= big.x + big.w && my >= big.y && my <= big.y + big.h;
+  drawCard(L.bigCard, teamId, selected);
+  if (hoverBig && !selected) {
+    ctx.save();
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(big.x - 2, big.y - 2, big.w + 4, big.h + 4);
+    ctx.restore();
+  }
+
+  const tnav = getTeamSelectPageNavRects();
+  ctx.textAlign = "center";
+  ctx.font = "13px Arial";
+  if (pages > 1 && tnav) {
+    ctx.fillStyle = "#374151";
+    ctx.fillRect(tnav.prev.x, tnav.prev.y, tnav.prev.w, tnav.prev.h);
+    ctx.fillRect(tnav.next.x, tnav.next.y, tnav.next.w, tnav.next.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(tnav.prev.x, tnav.prev.y, tnav.prev.w, tnav.prev.h);
+    ctx.strokeRect(tnav.next.x, tnav.next.y, tnav.next.w, tnav.next.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 14px Arial";
+    ctx.fillText("◀", tnav.prev.x + tnav.prev.w / 2, tnav.prev.y + tnav.prev.h / 2 + 5);
+    ctx.fillText("▶", tnav.next.x + tnav.next.w / 2, tnav.next.y + tnav.next.h / 2 + 5);
+    ctx.font = "12px Arial";
+    ctx.fillStyle = "#d1d5db";
+    if (pages === 2) {
+      ctx.fillText(page === 0 ? "●  ○" : "○  ●", canvas.width / 2, tnav.prev.y + tnav.prev.h + 16);
+    } else {
+      ctx.fillText("Page " + (page + 1) + " / " + pages, canvas.width / 2, tnav.prev.y + tnav.prev.h + 16);
+    }
   }
 
   const canStart = !!yUser;
@@ -2415,7 +2837,7 @@ function drawTeamSelectOverlay() {
   if (!canStart) {
     ctx.fillStyle = "#9ca3af";
     ctx.font = "14px Arial";
-    ctx.fillText("Select a team to continue", canvas.width / 2, L.start.y - 18);
+    ctx.fillText("Select a team or use Continue to pick this page", canvas.width / 2, L.start.y - 18);
   }
 }
 
@@ -2430,8 +2852,7 @@ function drawOpponentRevealOverlay() {
   const Tu = TEAMS[u];
   const Tc = TEAMS[c];
   const L = getOpponentRevealLayout();
-  const rosterLines = (T) =>
-    `${T.roster.qb.displayLabel}, ${T.roster.wr.displayLabel}, ${T.roster.flex.displayLabel}`;
+  const rosterLines = (T) => getFullTeamRosterTextLine(T);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
@@ -2439,19 +2860,24 @@ function drawOpponentRevealOverlay() {
   ctx.fillText("Your opponent", canvas.width / 2, 100);
   ctx.font = "16px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Next: coin toss (heads / tails). Good luck!", canvas.width / 2, 132);
+  const sessionSub = playSessionUsesCoinToss()
+    ? `Next: coin toss · ${getDifficultyLabel(game.gameSettings.difficulty)} difficulty`
+    : `${getPlaySessionLabel(game.playSessionKind)} — no kickoffs · ${getDifficultyLabel(game.gameSettings.difficulty)}`;
+  ctx.fillText(sessionSub, canvas.width / 2, 132);
 
   const boxW = 400;
   const boxLeft = (canvas.width - boxW) / 2;
-  const yYou = 168;
-  const yCpu = 288;
+  const yYou = 160;
+  const yCpu = 280;
+  const boxH = 110;
+  const logoS = 100;
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.95)";
-  ctx.fillRect(boxLeft, yYou, boxW, 96);
+  ctx.fillRect(boxLeft, yYou, boxW, boxH);
   ctx.strokeStyle = "#93c5fd";
   ctx.lineWidth = 3;
-  ctx.strokeRect(boxLeft, yYou, boxW, 96);
-  drawTeamBannerImage(u, boxLeft + boxW - 100, yYou + 8, 88, 88);
+  ctx.strokeRect(boxLeft, yYou, boxW, boxH);
+  drawTeamBannerImage(u, boxLeft + boxW - logoS - 4, yYou + 4, logoS, logoS);
   ctx.textAlign = "left";
   ctx.fillStyle = "#93c5fd";
   ctx.font = "bold 14px Arial";
@@ -2459,25 +2885,39 @@ function drawOpponentRevealOverlay() {
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
   ctx.fillText(Tu.name, boxLeft + 16, yYou + 50);
-  ctx.font = "13px Arial";
+  ctx.font = "11px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText(rosterLines(Tu), boxLeft + 16, yYou + 76);
+  {
+    const line = rosterLines(Tu);
+    const maxR = 368;
+    let t = line;
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxR) t = t.slice(0, -1);
+    const out = t.length < line.length ? `${t}…` : t;
+    ctx.fillText(out, boxLeft + 16, yYou + 76);
+  }
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.95)";
-  ctx.fillRect(boxLeft, yCpu, boxW, 96);
+  ctx.fillRect(boxLeft, yCpu, boxW, boxH);
   ctx.strokeStyle = "#f9a8d4";
   ctx.lineWidth = 3;
-  ctx.strokeRect(boxLeft, yCpu, boxW, 96);
-  drawTeamBannerImage(c, boxLeft + boxW - 100, yCpu + 8, 88, 88);
+  ctx.strokeRect(boxLeft, yCpu, boxW, boxH);
+  drawTeamBannerImage(c, boxLeft + boxW - logoS - 4, yCpu + 4, logoS, logoS);
   ctx.fillStyle = "#f9a8d4";
   ctx.font = "bold 14px Arial";
   ctx.fillText("CPU", boxLeft + 16, yCpu + 22);
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
   ctx.fillText(Tc.name, boxLeft + 16, yCpu + 50);
-  ctx.font = "13px Arial";
+  ctx.font = "11px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText(rosterLines(Tc), boxLeft + 16, yCpu + 76);
+  {
+    const line = rosterLines(Tc);
+    const maxR = 368;
+    let t = line;
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxR) t = t.slice(0, -1);
+    const out = t.length < line.length ? `${t}…` : t;
+    ctx.fillText(out, boxLeft + 16, yCpu + 76);
+  }
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#16a34a";
@@ -2803,10 +3243,13 @@ function drawCoinTossOverlay() {
     ctx.fillStyle = "#d1d5db";
     if (cpuOff) {
       ctx.fillText("You will play defense first.", canvas.width / 2, 300);
+      ctx.fillText(`${Tc.name} will attack the ${cpuDir} end zone first.`, canvas.width / 2, 326);
     } else {
       ctx.fillText("You will play offense first.", canvas.width / 2, 300);
+      // applyCoinTossDirectionForCpu inverts CPU pick vs userOffenseDirection — first drive is yours.
+      const youAttack = game.coinTossCpuDirection === "right" ? "left" : "right";
+      ctx.fillText(`You will attack the ${youAttack} end zone first.`, canvas.width / 2, 326);
     }
-    ctx.fillText(`${Tc.name} will attack the ${cpuDir} end zone first.`, canvas.width / 2, 326);
     ctx.fillStyle = "#16a34a";
     ctx.fillRect(L.cpuContinue.x, L.cpuContinue.y, L.cpuContinue.w, L.cpuContinue.h);
     ctx.strokeStyle = COLORS.white;
@@ -2829,25 +3272,27 @@ function drawCoinTossOverlay() {
 
 function drawPauseMenu() {
   ctx.fillStyle = "rgba(17, 24, 39, 0.35)";
-  ctx.fillRect(200, 150, 560, 300);
+  ctx.fillRect(200, 130, 560, 340);
   ctx.strokeStyle = COLORS.white;
   ctx.lineWidth = 3;
-  ctx.strokeRect(200, 150, 560, 300);
+  ctx.strokeRect(200, 130, 560, 340);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 32px Arial";
-  ctx.fillText("Paused", canvas.width / 2, 198);
+  ctx.fillText("Paused", canvas.width / 2, 178);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Press ESC again to resume", canvas.width / 2, 228);
+  ctx.fillText("Press ESC again to resume", canvas.width / 2, 206);
 
   const res = PAUSE_MENU_BUTTONS.resume;
+  const stats = PAUSE_MENU_BUTTONS.stats;
   const rep = PAUSE_MENU_BUTTONS.instantReplay;
   const modeBtn = PAUSE_MENU_BUTTONS.modeRestart;
   const home = PAUSE_MENU_BUTTONS.home;
   const modeLabel = "New Play Game";
   const hasReplay = typeof replayHasLastPlay === "function" && replayHasLastPlay();
+  const showStats = typeof shouldTrackGameStats === "function" && shouldTrackGameStats();
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
   ctx.fillRect(res.x, res.y, res.w, res.h);
@@ -2857,6 +3302,16 @@ function drawPauseMenu() {
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
   ctx.fillText("Resume", res.x + res.w / 2, res.y + res.h / 2 + 8);
+
+  if (showStats) {
+    ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
+    ctx.fillRect(stats.x, stats.y, stats.w, stats.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.strokeRect(stats.x, stats.y, stats.w, stats.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 20px Arial";
+    ctx.fillText("Box score / stats", stats.x + stats.w / 2, stats.y + stats.h / 2 + 6);
+  }
 
   ctx.fillStyle = hasReplay ? "rgba(55, 65, 81, 0.45)" : "rgba(55, 65, 81, 0.25)";
   ctx.fillRect(rep.x, rep.y, rep.w, rep.h);
@@ -2884,240 +3339,472 @@ function drawPauseMenu() {
   ctx.fillText("Main menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
 }
 
-// Draws a square play diagram inside a button.
-// Coordinate space: left = backfield, right = end zone direction.
-// Top/bottom = field sidelines. Matches the game's top-down view.
-function drawPlayDiagram(play, bx, by, bw, bh) {
-  // Square diagram centred horizontally inside the button
-  const sq    = bh - 22;                         // diagram is as tall as remaining button space
-  const dLeft  = bx + Math.round((bw - sq) / 2); // centred horizontally
-  const dRight = dLeft + sq;
-  const dTop   = by + 20;
-  const dBot   = dTop + sq;
-  const midY   = (dTop + dBot) / 2;
-  const mirror = false;
-  const fx = (x) => mirror ? (dLeft + dRight - x) : x;
+function drawSettingsMenu() {
+  drawMenuBackground();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // LOS splits the square ~45% from the left
-  const losX   = dLeft + Math.round(sq * 0.42);
+  const L = getSettingsMenuLayout();
+  const q = game.gameSettings.quarterLengthMin;
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 34px Arial";
+  ctx.fillText("Settings", canvas.width / 2, 90);
+  ctx.font = "16px Arial";
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillText("Applies to new games", canvas.width / 2, 124);
+  ctx.font = "bold 18px Arial";
+  ctx.fillStyle = "#fde68a";
+  ctx.fillText("Minutes per quarter", canvas.width / 2, 178);
+
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(L.minus.x, L.minus.y, L.minus.w, L.minus.h);
+  ctx.fillRect(L.plus.x, L.plus.y, L.plus.w, L.plus.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.minus.x, L.minus.y, L.minus.w, L.minus.h);
+  ctx.strokeRect(L.plus.x, L.plus.y, L.plus.w, L.plus.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 32px Arial";
+  ctx.fillText("−", L.minus.x + L.minus.w / 2, L.minus.y + L.minus.h / 2 + 10);
+  ctx.fillText("+", L.plus.x + L.plus.w / 2, L.plus.y + L.plus.h / 2 + 10);
+  ctx.font = "bold 48px Arial";
+  ctx.fillText(String(q), canvas.width / 2, L.minus.y + 40);
+
+  ctx.font = "bold 18px Arial";
+  ctx.fillStyle = "#fde68a";
+  ctx.fillText("Difficulty", canvas.width / 2, 300);
+  const diff = game.gameSettings.difficulty || "normal";
+  const diffSub = DIFFICULTY_PRESETS[diff] ? DIFFICULTY_PRESETS[diff].sub : "";
+  for (const key of DIFFICULTY_ORDER) {
+    const rect = L["diff" + key.charAt(0).toUpperCase() + key.slice(1)];
+    const active = diff === key;
+    const preset = DIFFICULTY_PRESETS[key];
+    ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 15px Arial";
+    ctx.fillText(preset.label, rect.x + rect.w / 2, rect.y + 18);
+  }
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillText(diffSub, canvas.width / 2, 392);
+  ctx.fillText("Range: 1–12 min · Halftime after Q2 switches sides", canvas.width / 2, 412);
+
+  ctx.fillStyle = "#16a34a";
+  ctx.fillRect(L.done.x, L.done.y, L.done.w, L.done.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.done.x, L.done.y, L.done.w, L.done.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("Save & back", L.done.x + L.done.w / 2, L.done.y + L.done.h / 2 + 7);
+
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.font = "bold 14px Arial";
+  ctx.fillText("Main menu", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+}
+
+function drawStatsCategoryPanel(sideKey, category, x, y, w) {
+  const stats = game.teamStats && game.teamStats[sideKey];
+  const name = getTeamDisplayNameForStats(sideKey);
+  ctx.textAlign = "left";
+  ctx.fillStyle = sideKey === "user" ? "#93c5fd" : "#f9a8d4";
+  ctx.font = "bold 14px Arial";
+  ctx.fillText(name, x, y);
+  ctx.fillStyle = "#e5e7eb";
+  ctx.font = "12px Arial";
+  if (!stats) {
+    ctx.fillText("No stats yet", x, y + 22);
+    return;
+  }
+
+  if (category === "passing") {
+    const p = stats.passing;
+    const pct = getPassCompPct(stats).toFixed(1);
+    ctx.fillText(`Att ${p.att}   Comp ${p.comp}   Yds ${p.yards}`, x, y + 20);
+    ctx.fillText(`TD ${p.td}   INT ${p.int}   Sacks ${p.sacks}`, x, y + 36);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 13px Arial";
+    ctx.fillText(`QB Cmp%  ${pct}%`, x, y + 54);
+    return;
+  }
+
+  if (category === "receiving") {
+    let row = 0;
+    for (const key of ["horse", "pete", "p4"]) {
+      const r = stats.receiving[key];
+      if (!r) continue;
+      const label = getReceiverDisplayName(sideKey, key);
+      ctx.fillText(`${label}:  ${r.rec} rec  ${r.yards} yds  ${r.td} TD`, x, y + 20 + row * 16);
+      row += 1;
+    }
+    if (row === 0) ctx.fillText("No receptions", x, y + 20);
+    return;
+  }
+
+  if (category === "rushing") {
+    const r = stats.rushing;
+    ctx.fillText(`Att ${r.att}   Yds ${r.yards}   TD ${r.td}`, x, y + 22);
+    return;
+  }
+
+  const d = stats.defense;
+  ctx.fillText(`Tackles ${d.tackles}   Sacks ${d.sacks}`, x, y + 20);
+  ctx.fillText(`INT ${d.int}   TFL ${d.tfl}`, x, y + 36);
+}
+
+function drawStatsMenu() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.88)";
+  ctx.fillRect(180, 110, 600, 390);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(180, 110, 600, 390);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("Box Score", canvas.width / 2, 148);
+
+  const L = getStatsMenuLayout();
+  const cat = game.statsCategory || "passing";
+  const tabLabels = { passing: "Passing", receiving: "Receiving", rushing: "Rushing", defense: "Defense" };
+
+  for (const key of STATS_CATEGORIES) {
+    const tab = L.tabs[key];
+    const active = key === cat;
+    ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+    ctx.fillRect(tab.x, tab.y, tab.w, tab.h);
+    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+    ctx.lineWidth = active ? 2 : 1;
+    ctx.strokeRect(tab.x, tab.y, tab.w, tab.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 11px Arial";
+    ctx.fillText(tabLabels[key], tab.x + tab.w / 2, tab.y + tab.h / 2 + 4);
+  }
+
+  drawStatsCategoryPanel("user", cat, 220, 230, 240);
+  drawStatsCategoryPanel("cpu", cat, 520, 230, 240);
+
+  ctx.fillStyle = "rgba(55, 65, 81, 0.45)";
+  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("Back to pause", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 7);
+}
+
+function drawHalftimePopup() {
+  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fde68a";
+  ctx.font = "bold 44px Arial";
+  ctx.fillText("HALFTIME", canvas.width / 2, 220);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "20px Arial";
+  ctx.fillText("Teams switch sides for the second half", canvas.width / 2, 280);
+  ctx.font = "15px Arial";
+  ctx.fillStyle = "#d1d5db";
+  const remain = Math.max(0, Math.ceil(game.halftimePopupTimer / 1000));
+  ctx.fillText(`Starting Q3 in ${remain}s… (Space / Enter to continue)`, canvas.width / 2, 320);
+}
+
+// Coordinate space: left = backfield, right = end zone (mirrored when driving left).
+function drawPlayDiagram(play, bx, by, bw, bh) {
+  const titleH = 16;
+  const pad = 5;
+  const dW = bw - pad * 2;
+  const dH = bh - titleH - pad;
+  const dLeft = bx + pad;
+  const dRight = dLeft + dW;
+  const dTop = by + titleH;
+  const dBot = dTop + dH;
+  const midY = (dTop + dBot) / 2;
+  const refSize = Math.min(dW, dH);
+
+  // LOS ~40% from the left — backfield auto-scales to fit deepest player.
+  const losX = dLeft + Math.round(dW * 0.40);
+  const offenseDir = typeof getOffenseDirection === "function" ? getOffenseDirection() : 1;
+  // Flip around the LOS so every route/formation reads toward the active end zone.
+  const diagramX = (x) => (offenseDir > 0 ? x : 2 * losX - x);
 
   ctx.save();
 
-  // Faint field background so the square reads as its own space
-  ctx.fillStyle = "rgba(47,125,50,0.35)";
-  ctx.fillRect(dLeft, dTop, sq, sq);
+  // Mini field — full button width so deep backfields still fit.
+  ctx.fillStyle = "rgba(30, 80, 45, 0.55)";
+  ctx.fillRect(dLeft, dTop, dW, dH);
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const gy = dTop + (dH * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(dLeft + 4, gy);
+    ctx.lineTo(dRight - 4, gy);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.strokeRect(dLeft + 0.5, dTop + 0.5, dW - 1, dH - 1);
 
   // LOS
   ctx.strokeStyle = "#facc15";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 2]);
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
   ctx.beginPath();
-  ctx.moveTo(losX, dTop);
-  ctx.lineTo(losX, dBot);
+  ctx.moveTo(losX, dTop + 3);
+  ctx.lineTo(losX, dBot - 3);
   ctx.stroke();
   ctx.setLineDash([]);
 
   const QB    = "#93c5fd";
   const HORSE = "#f97316";
   const PETE  = "#c8a97e";
+  const READ  = "rgba(255,255,255,0.5)";
+  const d1X = losX + Math.round(dW * 0.20);
+  const cornerR = Math.max(7, refSize * 0.07);
+  const routeW = 2;
 
-  // Reference points used as pass-route destinations
-  const d1X  = losX + Math.round(sq * 0.20);
-  const pigY = dTop  + Math.round(sq * 0.18);
-  const hawY = dBot  - Math.round(sq * 0.18);
+  function px(x) {
+    return diagramX(x);
+  }
 
-  function dot(x, y, color, r = 3) {
+  function playerDot(x, y, color, r = 3.5) {
+    const xm = px(x);
+    const dotR = Math.max(r, refSize * 0.038);
     ctx.fillStyle = color;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(fx(x), y, r, 0, Math.PI * 2);
+    ctx.arc(xm, y, dotR, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  function arrow(sx, sy, ex, ey, color) {
-    const sxm = fx(sx);
-    const exm = fx(ex);
-    const ang = Math.atan2(ey - sy, exm - sxm);
-    const hl  = 5;
-    ctx.strokeStyle = color;
-    ctx.fillStyle   = color;
-    ctx.lineWidth   = 1.5;
-    ctx.beginPath(); ctx.moveTo(sxm, sy); ctx.lineTo(exm, ey); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(exm, ey);
-    ctx.lineTo(exm - hl * Math.cos(ang - 0.45), ey - hl * Math.sin(ang - 0.45));
-    ctx.lineTo(exm - hl * Math.cos(ang + 0.45), ey - hl * Math.sin(ang + 0.45));
-    ctx.closePath(); ctx.fill();
-  }
-
-  function curve(sx, sy, cpx, cpy, ex, ey, color) {
-    const sxm = fx(sx);
-    const cpxm = fx(cpx);
-    const exm = fx(ex);
-    const ang = Math.atan2(ey - cpy, exm - cpxm);
-    const hl  = 5;
-    ctx.strokeStyle = color;
-    ctx.lineWidth   = 1.5;
-    ctx.beginPath(); ctx.moveTo(sxm, sy); ctx.quadraticCurveTo(cpxm, cpy, exm, ey); ctx.stroke();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(exm, ey);
-    ctx.lineTo(exm - hl * Math.cos(ang - 0.45), ey - hl * Math.sin(ang - 0.45));
-    ctx.lineTo(exm - hl * Math.cos(ang + 0.45), ey - hl * Math.sin(ang + 0.45));
-    ctx.closePath(); ctx.fill();
-  }
-
-  function dashedLine(sx, sy, ex, ey) {
-    ctx.beginPath();
-    ctx.moveTo(fx(sx), sy);
-    ctx.lineTo(fx(ex), ey);
     ctx.stroke();
   }
 
-  if (play === "sweepRight") {
-    // Sweep to the BOTTOM edge — Pete leads, horse arcs outward to the edge
-    dot(losX - 3, midY,  QB,   4);
-    dot(losX - 3, dBot - 2, PETE, 3);
-    // Horse starts deep left (middle), sweeps outward toward the bottom edge
-    dot(dLeft + 2, midY, HORSE, 3);
-    curve(dLeft + 2, midY, dLeft + Math.round(sq*0.42), dBot - 2, losX - 3, dBot - 2, HORSE);
+  function drawArrowHead(x, y, angle, color, size = 5) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - size * Math.cos(angle - 0.42), y - size * Math.sin(angle - 0.42));
+    ctx.lineTo(x - size * Math.cos(angle + 0.42), y - size * Math.sin(angle + 0.42));
+    ctx.closePath();
+    ctx.fill();
+  }
 
-  } else if (play === "sweepLeft") {
-    // Sweep to the TOP edge — Pete leads, horse arcs outward to the edge
-    dot(losX - 3, midY, QB, 4);
-    dot(losX - 3, dTop + 2, PETE, 3);
-    // Horse starts deep left (middle), sweeps outward toward the top edge
-    dot(dLeft + 2, midY, HORSE, 3);
-    curve(dLeft + 2, midY, dLeft + Math.round(sq*0.42), dTop + 2, losX - 3, dTop + 2, HORSE);
+  /** Multi-segment route with rounded bends and an arrowhead at the end. */
+  function routeThrough(points, color, opts = {}) {
+    if (points.length < 2) return;
+    const pts = points.map((p) => ({ x: px(p.x), y: p.y }));
+    const cr = opts.corner ?? cornerR;
+    const lw = opts.width ?? routeW;
+    const dashed = opts.dashed ?? false;
 
-  } else if (play === "passRight") {
-    // QB drops back; receiver runs deep right-bottom
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 2, midY, QB);
-    dot(losX + 2, hawY, HORSE, 3);
-    arrow(losX + 2, hawY, dRight, dBot - 2, HORSE);
-    dot(losX - 4, pigY, PETE, 3);
-    arrow(losX - 4, pigY, d1X, pigY, PETE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dRight, dBot - 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash(dashed ? [4, 4] : []);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+
+    if (pts.length === 2) {
+      ctx.lineTo(pts[1].x, pts[1].y);
+    } else {
+      for (let i = 1; i < pts.length - 1; i++) {
+        const prev = pts[i - 1];
+        const curr = pts[i];
+        const next = pts[i + 1];
+        const inLen = Math.hypot(curr.x - prev.x, curr.y - prev.y) || 1;
+        const outLen = Math.hypot(next.x - curr.x, next.y - curr.y) || 1;
+        const bend = Math.min(cr, inLen * 0.45, outLen * 0.45);
+        const bx = curr.x - (curr.x - prev.x) * (bend / inLen);
+        const by = curr.y - (curr.y - prev.y) * (bend / inLen);
+        const ax = curr.x + (next.x - curr.x) * (bend / outLen);
+        const ay = curr.y + (next.y - curr.y) * (bend / outLen);
+        ctx.lineTo(bx, by);
+        ctx.quadraticCurveTo(curr.x, curr.y, ax, ay);
+      }
+      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    }
+    ctx.stroke();
     ctx.setLineDash([]);
 
-  } else if (play === "passLeft") {
-    // QB drops back; receiver runs deep right-top
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 2, midY, QB);
-    dot(losX + 2, pigY, HORSE, 3);
-    arrow(losX + 2, pigY, dRight, dTop + 2, HORSE);
-    dot(losX - 4, hawY, PETE, 3);
-    arrow(losX - 4, hawY, d1X, hawY, PETE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dRight, dTop + 2);
-    ctx.setLineDash([]);
+    if (opts.noArrow) return;
+    const last = pts[pts.length - 1];
+    const prev = pts[pts.length - 2];
+    drawArrowHead(last.x, last.y, Math.atan2(last.y - prev.y, last.x - prev.x), color);
+  }
 
+  function routeBezier(sx, sy, cpx, cpy, ex, ey, color, opts = {}) {
+    const sxm = px(sx);
+    const cpxm = px(cpx);
+    const exm = px(ex);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = opts.width ?? routeW;
+    ctx.lineCap = "round";
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(sxm, sy);
+    ctx.quadraticCurveTo(cpxm, cpy, exm, ey);
+    ctx.stroke();
+    if (!opts.noArrow) {
+      drawArrowHead(exm, ey, Math.atan2(ey - cpy, exm - cpxm), color);
+    }
+  }
+
+  function routeLine(sx, sy, ex, ey, color, opts = {}) {
+    routeThrough([{ x: sx, y: sy }, { x: ex, y: ey }], color, opts);
+  }
+
+  const formationSpots = getFormationDiagramSpots(play, losX, dLeft, dTop, dW, dH);
+  function pos(id) {
+    const s = formationSpots.find((sp) => sp.id === id);
+    return s
+      ? { x: s.diagX, y: s.diagY, color: s.style.color, r: s.style.r }
+      : { x: losX, y: midY, color: QB, r: 4 };
+  }
+
+  // Routes first, then player dots on top.
+  if (play === "sweepRight" || play === "sweepLeft") {
+    const horse = pos("allyHorse");
+    const p5 = pos("offenseP5");
+    const rb = pos("offenseP4");
+    const qb = pos("player1");
+    const up = play === "sweepLeft";
+    routeLine(horse.x, horse.y, horse.x + dW * 0.18, horse.y, HORSE, { corner: 4 });
+    routeLine(p5.x, p5.y, p5.x + dW * 0.18, p5.y, PETE, { corner: 4 });
+    routeBezier(
+      rb.x, rb.y,
+      dLeft + dW * 0.33, up ? dTop + 6 : dBot - 6,
+      qb.x - 2, qb.y + (up ? -4 : 4),
+      HORSE
+    );
+  } else if (play === "passRight" || play === "passLeft") {
+    const qb = pos("player1");
+    const center = pos("offenseP5");
+    const outside = pos("allyHorse");
+    const slot = pos("lilTunnelPete");
+    const inside = pos("offenseP4");
+    const stemX = dLeft + Math.round(dW * 0.57);
+    const cornerX = dLeft + Math.round(dW * 0.75);
+    const postX = dRight - 8;
+    const postY = dTop + Math.round(dH * (play === "passLeft" ? 0.58 : 0.42));
+    const cornerY = play === "passLeft" ? dTop + 4 : dBot - 4;
+    routeLine(center.x, center.y, qb.x, qb.y, PETE, { corner: 4 });
+    routeThrough([
+      { x: outside.x, y: outside.y },
+      { x: stemX, y: outside.y },
+      { x: cornerX, y: cornerY },
+      { x: postX, y: postY }
+    ], HORSE);
+    routeLine(slot.x, slot.y, d1X, slot.y, PETE);
+    routeLine(inside.x, inside.y, d1X - dW * 0.06, inside.y, HORSE);
+    routeLine(qb.x, qb.y, postX, postY, READ, { dashed: true, noArrow: true, width: 1.5 });
   } else if (play === "barnPlay") {
-    // Matches the approved Barn Play image: X on a deeper post, Z breaking upfield
-    const lowY = dBot - 6;
-    const highY = lowY - Math.round(sq * 0.26);
-    const horseStemX = dLeft + Math.round(sq * 0.72);
-    const peteStemX = dLeft + Math.round(sq * 0.52);
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 2, midY, QB);
-    dot(losX + 2, lowY, HORSE, 3);
-    arrow(losX + 2, lowY, horseStemX, lowY, HORSE);
-    arrow(horseStemX, lowY, dRight - 8, midY + Math.round(sq * 0.03), HORSE);
-    dot(losX + 2, highY, PETE, 3);
-    arrow(losX + 2, highY, peteStemX, highY, PETE);
-    arrow(peteStemX, highY, peteStemX, dTop + Math.round(sq * 0.18), PETE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dRight - 12, midY);
-    ctx.setLineDash([]);
-
+    const qb = pos("player1");
+    const horse = pos("allyHorse");
+    const pete = pos("lilTunnelPete");
+    const horseStemX = dLeft + Math.round(dW * 0.72);
+    const peteStemX = dLeft + Math.round(dW * 0.52);
+    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
+    routeThrough([
+      { x: horse.x, y: horse.y },
+      { x: horseStemX, y: horse.y },
+      { x: dRight - 8, y: midY + Math.round(dH * 0.03) }
+    ], HORSE);
+    routeThrough([
+      { x: pete.x, y: pete.y },
+      { x: peteStemX, y: pete.y },
+      { x: peteStemX, y: dTop + Math.round(dH * 0.18) }
+    ], PETE);
+    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
   } else if (play === "scrambledEggs") {
-    // Match the live route: Z corners down-right, X curls straight back
-    const lowY = dBot - 6;
-    const highY = lowY - Math.round(sq * 0.26);
-    const zStemX = dLeft + Math.round(sq * 0.92);
-    const xStemX = dLeft + Math.round(sq * 0.67);
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 2, midY, QB);
-    dot(losX + 2, highY, PETE, 3);
-    arrow(losX + 2, highY, zStemX, highY, PETE);
-    arrow(zStemX, highY, dRight - 10, dBot - 16, PETE);
-    dot(losX + 2, lowY, HORSE, 3);
-    arrow(losX + 2, lowY, xStemX, lowY, HORSE);
-    arrow(xStemX, lowY, dLeft + Math.round(sq * 0.60), lowY, HORSE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dRight - 12, midY);
-    ctx.setLineDash([]);
-
+    const qb = pos("player1");
+    const horse = pos("allyHorse");
+    const pete = pos("lilTunnelPete");
+    const zStemX = dLeft + Math.round(dW * 0.92);
+    const xStemX = dLeft + Math.round(dW * 0.67);
+    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
+    routeThrough([
+      { x: pete.x, y: pete.y },
+      { x: zStemX, y: pete.y },
+      { x: dRight - 10, y: dBot - 16 }
+    ], PETE);
+    routeThrough([
+      { x: horse.x, y: horse.y },
+      { x: xStemX, y: horse.y },
+      { x: dLeft + Math.round(dW * 0.60), y: horse.y }
+    ], HORSE);
+    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
   } else if (play === "barnDoorBoot") {
-    // Boot: QB rolls, Pete sweeps opposite, Horse blocks lead defender.
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 8, midY - Math.round(sq * 0.15), QB);
-    dot(losX + 2, hawY - 4, PETE, 3);
-    arrow(losX + 2, hawY - 4, dRight - 8, dBot - 8, PETE);
-    dot(losX + 2, pigY + 4, HORSE, 3);
-    arrow(losX + 2, pigY + 4, d1X + 10, midY + 12, HORSE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dRight - 10, dTop + 8);
-    ctx.setLineDash([]);
-
+    const qb = pos("player1");
+    const pete = pos("lilTunnelPete");
+    const horse = pos("allyHorse");
+    const deepX = losX - Math.round(dW * 0.38);
+    routeLine(qb.x, qb.y, deepX, qb.y, QB, { corner: 4 });
+    routeThrough([
+      { x: deepX, y: qb.y },
+      { x: losX - dW * 0.02, y: qb.y - dH * 0.18 },
+      { x: losX + dW * 0.05, y: qb.y - dH * 0.10 }
+    ], QB, { noArrow: true });
+    routeLine(pete.x, pete.y, dRight - 8, dBot - 8, PETE);
+    routeBezier(horse.x, horse.y, d1X + 6, midY + 18, d1X + 10, midY + 12, HORSE);
+    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
   } else if (play === "pigPenScreen") {
-    // Quick screen left with convoy.
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 10, dBot - 16, QB);
-    dot(losX + 1, dBot - 16, HORSE, 3);
-    arrow(losX + 1, dBot - 16, dLeft + 14, dBot - 16, HORSE);
-    dot(losX - 10, dBot - 26, PETE, 3);
-    arrow(losX - 10, dBot - 26, dLeft + 20, dBot - 26, PETE);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    dashedLine(losX - 8, midY, dLeft + 12, dBot - 16);
-    ctx.setLineDash([]);
-
+    const qb = pos("player1");
+    const wr = pos("lilTunnelPete");
+    const rb = pos("allyHorse");
+    const catchX = losX - Math.round(dW * 0.24);
+    const catchY = rb.y;
+    routeBezier(qb.x, qb.y, (qb.x + catchX) / 2, (qb.y + catchY) / 2, catchX, catchY, QB);
+    routeBezier(
+      wr.x, wr.y,
+      wr.x - dW * 0.22, wr.y - dH * 0.06,
+      wr.x - dW * 0.38, dBot - dH * 0.18,
+      PETE
+    );
+    routeLine(rb.x, rb.y, catchX, catchY, HORSE);
+    routeLine(qb.x, qb.y, catchX, catchY, READ, { dashed: true, noArrow: true, width: 1.5 });
   } else if (play === "cornfieldCross") {
-    // Layered crossing routes.
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 2, midY, QB);
-    dot(losX + 2, pigY, HORSE, 3);
-    curve(losX + 2, pigY, d1X, pigY + 12, dRight - 8, midY + 10, HORSE);
-    dot(losX + 2, hawY, PETE, 3);
-    curve(losX + 2, hawY, d1X, hawY - 12, dRight - 8, midY - 10, PETE);
+    const qb = pos("player1");
+    const horse = pos("allyHorse");
+    const pete = pos("lilTunnelPete");
+    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
+    routeBezier(horse.x, horse.y, d1X, horse.y + 12, dRight - 8, midY + 10, HORSE);
+    routeBezier(pete.x, pete.y, d1X, pete.y - 12, dRight - 8, midY - 10, PETE);
+  } else if (play === "diveRight" || play === "diveLeft") {
+    const qb = pos("player1");
+    const pete = pos("lilTunnelPete");
+    const horse = pos("allyHorse");
+    const up = play === "diveLeft";
+    const handoffX = losX - 10;
+    const handoffY = midY + (up ? -1 : 1) * Math.round(dH * 0.18);
+    routeLine(qb.x, qb.y, handoffX, handoffY, QB, { corner: 4 });
+    routeBezier(
+      pete.x, pete.y,
+      losX - dW * 0.14, up ? dTop + 2 : dBot - 2,
+      handoffX, handoffY,
+      PETE
+    );
+    routeBezier(
+      horse.x, horse.y,
+      losX - dW * 0.26, midY + (up ? -1 : 1) * Math.round(dH * 0.15),
+      handoffX, handoffY,
+      HORSE
+    );
+  }
 
-  } else if (play === "roosterRollout") {
-    // Flood rollout: QB moves, one deep + one intermediate level.
-    dot(losX - 8, midY, QB, 4);
-    arrow(losX - 8, midY, dLeft + 10, dTop + 16, QB);
-    dot(losX + 2, pigY + 2, HORSE, 3);
-    arrow(losX + 2, pigY + 2, dRight - 8, dTop + 6, HORSE);
-    dot(losX + 2, hawY - 2, PETE, 3);
-    arrow(losX + 2, hawY - 2, d1X + 10, midY + 8, PETE);
-
-  } else if (play === "diveRight") {
-    // Pete arcs down; horse follows for handoff — all pre-snap motion behind LOS
-    dot(losX - 3, midY, QB, 4);
-    arrow(losX - 3, midY, losX - 10, midY + Math.round(sq*0.18), QB);
-    dot(losX - Math.round(sq*0.32), midY, PETE, 3);
-    curve(losX - Math.round(sq*0.32), midY, losX - Math.round(sq*0.14), dBot - 2, losX - 3, midY + Math.round(sq*0.2), PETE);
-    dot(dLeft + 2, midY, HORSE, 3);
-    curve(dLeft + 2, midY, losX - Math.round(sq*0.26), midY + Math.round(sq*0.15), losX - 10, midY + Math.round(sq*0.18), HORSE);
-
-  } else if (play === "diveLeft") {
-    // Mirror — Pete arcs up; horse follows for handoff — all pre-snap motion behind LOS
-    dot(losX - 3, midY, QB, 4);
-    arrow(losX - 3, midY, losX - 10, midY - Math.round(sq*0.18), QB);
-    dot(losX - Math.round(sq*0.32), midY, PETE, 3);
-    curve(losX - Math.round(sq*0.32), midY, losX - Math.round(sq*0.14), dTop + 2, losX - 3, midY - Math.round(sq*0.2), PETE);
-    dot(dLeft + 2, midY, HORSE, 3);
-    curve(dLeft + 2, midY, losX - Math.round(sq*0.26), midY - Math.round(sq*0.15), losX - 10, midY - Math.round(sq*0.18), HORSE);
+  for (const s of formationSpots) {
+    playerDot(s.diagX, s.diagY, s.style.color, s.style.r);
   }
 
   ctx.restore();
@@ -3169,20 +3856,18 @@ function drawDefensePreviewDiagram(defenseKey, bx, by, bw, bh) {
 
   if (defenseKey === "A") {
     dot(closeX, topY, 6, "#f472b6");
-    dot(closeX, botY, 6, "#86efac");
-    dot(deepX, midDefY, 6, "#fca5a5");
+    dot(closeX, midDefY, 6, "#86efac");
+    dot(closeX, botY, 6, "#a78bfa");
+    const deepY1 = top + Math.round(height * 0.34);
+    const deepY2 = top + Math.round(height * 0.66);
+    dot(deepX, deepY1, 6, "#fca5a5");
+    dot(deepX, deepY2, 6, "#fdba74");
   } else if (defenseKey === "B") {
-    dot(deepX, topY, 6, "#f472b6");
-    dot(deepX, botY, 6, "#86efac");
-    dot(closeX, midDefY, 6, "#fca5a5");
-  } else if (defenseKey === "C") {
     dot(closeX, topY, 6, "#f472b6");
     dot(closeX, botY, 6, "#86efac");
-    dot(closeX, midDefY, 6, "#fca5a5");
-  } else if (defenseKey === "D") {
-    dot(deepX, topY, 6, "#f472b6");
-    dot(deepX, botY, 6, "#86efac");
-    dot(deepX, midDefY, 6, "#fca5a5");
+    dot(deepX, top + Math.round(height * 0.18), 6, "#fca5a5");
+    dot(deepX, midDefY, 6, "#a78bfa");
+    dot(deepX, top + Math.round(height * 0.82), 6, "#fdba74");
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.font = "bold 76px Arial";
@@ -3237,17 +3922,14 @@ function drawDefenseSelectOverlay() {
   ctx.fillText(
     game.turnoverSeriesActive
       ? "Pig's offense takes over here. Choose a defense and offense look below."
-      : "Choose defense up top and toggle the offense play below.",
+      : "Choose defense shell up top and toggle the offense play below.",
     canvas.width / 2,
     P.y + 112
   );
 
   const labels = {
-    A: { title: "Run Defense", sub: "Two defenders up front" },
-    B: { title: "Pass Defense", sub: "Two defenders deeper" },
-    C: { title: "De-fence", sub: "Big Coop walks up too" },
-    D: { title: "Prevent", sub: "De-fence, 15 yards deeper" },
-    random: { title: "Random", sub: "" }
+    A: { title: "3-2", sub: "Run shell (3 near LOS, 2 deep)" },
+    B: { title: "2-3", sub: "Pass shell (2 near LOS, 3 deep)" }
   };
 
   for (const key of getFilteredDefenseOptionOrder()) {
@@ -3272,12 +3954,12 @@ function drawDefenseSelectOverlay() {
   const jamRect = getDefenseSelectJamToggleRect();
   const offenseLabel = game.defenseModeSelectedOffensePlay === "random"
     ? "Random"
-    : (PLAY_SELECT_LABELS[game.defenseModeSelectedOffensePlay] || "Random");
+    : getPlaySelectLabel(game.defenseModeSelectedOffensePlay);
   const rusherLabel = game.defenseUserRusherId === "allyDonkey"
-    ? "Deputy Hee-Haw"
+    ? allyDonkey.displayLabel
     : game.defenseUserRusherId === "cluckNorris"
-      ? "Big Coop"
-      : "Professor Pig";
+      ? cluckNorris.displayLabel
+      : player2.displayLabel;
   ctx.fillStyle = "#9ca3af";
   ctx.font = "13px Arial";
   ctx.fillText("Offense play", canvas.width / 2, offenseRect.y - 12);
@@ -3329,13 +4011,141 @@ function drawControlledDefenderMarker() {
   ctx.restore();
 }
 
+function drawFieldRouteArrowHead(x, y, angle, color, size = 9) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - size * Math.cos(angle - 0.42), y - size * Math.sin(angle - 0.42));
+  ctx.lineTo(x - size * Math.cos(angle + 0.42), y - size * Math.sin(angle + 0.42));
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Rounded polyline route on the field (matches play-select diagram style). */
+function drawFieldRouteThrough(points, color, opts = {}) {
+  if (!points || points.length < 2) return;
+  const cornerR = opts.corner ?? 14;
+  const lw = opts.width ?? 3;
+  const dashed = opts.dashed ?? false;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.setLineDash(dashed ? [7, 6] : []);
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  if (points.length === 2) {
+    ctx.lineTo(points[1].x, points[1].y);
+  } else {
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const next = points[i + 1];
+      const inLen = Math.hypot(curr.x - prev.x, curr.y - prev.y) || 1;
+      const outLen = Math.hypot(next.x - curr.x, next.y - curr.y) || 1;
+      const bend = Math.min(cornerR, inLen * 0.45, outLen * 0.45);
+      const bx = curr.x - (curr.x - prev.x) * (bend / inLen);
+      const by = curr.y - (curr.y - prev.y) * (bend / inLen);
+      const ax = curr.x + (next.x - curr.x) * (bend / outLen);
+      const ay = curr.y + (next.y - curr.y) * (bend / outLen);
+      ctx.lineTo(bx, by);
+      ctx.quadraticCurveTo(curr.x, curr.y, ax, ay);
+    }
+    ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (opts.noArrow) return;
+  const last = points[points.length - 1];
+  const prev = points[points.length - 2];
+  drawFieldRouteArrowHead(last.x, last.y, Math.atan2(last.y - prev.y, last.x - prev.x), color);
+}
+
+function drawFieldRouteBezier(from, cp, to, color, opts = {}) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = opts.width ?? 3;
+  ctx.lineCap = "round";
+  ctx.setLineDash(opts.dashed ? [7, 6] : []);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.quadraticCurveTo(cp.x, cp.y, to.x, to.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (!opts.noArrow) {
+    drawFieldRouteArrowHead(to.x, to.y, Math.atan2(to.y - cp.y, to.x - cp.x), color);
+  }
+}
+
+function drawPlayFieldRoutePreviews() {
+  if (game.mode !== "play" || game.state !== "prePlayCadence" || !game.playModeCurrentPlay) return;
+
+  let routes;
+  if (game.cpuOffense) {
+    routes =
+      typeof getDefenseFieldCoveragePreviews === "function"
+        ? getDefenseFieldCoveragePreviews(game.playModeCurrentPlay)
+        : [];
+  } else {
+    routes =
+      typeof getPlayFieldRoutePreviews === "function"
+        ? getPlayFieldRoutePreviews(game.playModeCurrentPlay)
+        : [];
+  }
+  if (!routes.length) return;
+
+  ctx.save();
+  for (const route of routes) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    if (route.kind === "bezier") {
+      ctx.beginPath();
+      ctx.moveTo(route.from.x, route.from.y);
+      ctx.quadraticCurveTo(route.cp.x, route.cp.y, route.to.x, route.to.y);
+      ctx.stroke();
+    } else {
+      drawFieldRouteThrough(route.points, "rgba(255,255,255,0.35)", {
+        dashed: route.dashed,
+        noArrow: true,
+        width: 5,
+      });
+    }
+    ctx.restore();
+
+    if (route.kind === "bezier") {
+      drawFieldRouteBezier(route.from, route.cp, route.to, route.color, route);
+    } else {
+      drawFieldRouteThrough(route.points, route.color, route);
+    }
+
+    if (route.role) {
+      const anchor =
+        route.kind === "bezier" ? route.from : route.points[0];
+      ctx.font = "bold 11px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = "rgba(17, 24, 39, 0.72)";
+      ctx.fillText(route.role, anchor.x + 1, anchor.y - 13);
+      ctx.fillStyle = "#fef9c3";
+      ctx.fillText(route.role, anchor.x, anchor.y - 14);
+    }
+  }
+  ctx.restore();
+}
+
 function drawPrePlayCadenceOverlay() {
   const words = ["Ready", "Set", "Hut"];
   const word = words[game.prePlayCadenceIndex] || "Ready";
 
   ctx.save();
-  ctx.fillStyle = "rgba(17, 24, 39, 0.24)";
+  ctx.fillStyle = "rgba(17, 24, 39, 0.16)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPlayFieldRoutePreviews();
   ctx.textAlign = "center";
   ctx.fillStyle = "#fef3c7";
   ctx.font = "bold 68px Arial";
@@ -3470,12 +4280,12 @@ function drawPlaySelectOverlay() {
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.strokeRect(s.x, s.y, s.w, s.h);
     ctx.fillStyle = COLORS.white;
-    ctx.fillText(PLAY_SELECT_LABELS[s.key] || s.key, s.x + s.w / 2, s.y + 15);
+    ctx.fillText(getPlaySelectLabel(s.key), s.x + s.w / 2, s.y + 15);
     ctx.fillStyle = "#374151";
   }
 
   for (const s of slots) {
-    drawPlayDiagram(s.key, s.x, s.y, s.w, s.h);
+    drawPlayDiagram(resolvePlayKeyForSelectedSide(s.key), s.x, s.y, s.w, s.h);
     if (cur === null) {
       const category = getPlayCategory(s.key);
       const badgeW = 46;
@@ -3567,15 +4377,21 @@ function drawPlaySelectOverlay() {
   ctx.fillText("Defense", canvas.width / 2, divY + 18);
 
   const dt = getPlaySelectDefenseToggleRect();
-  const defColor = game.selectedDefense === "A"
-    ? "#dc2626"
-    : game.selectedDefense === "B"
-    ? "#1d4ed8"
-    : game.selectedDefense === "C"
-    ? "#7c3aed"
-    : game.selectedDefense === "D"
-    ? "#0f766e"
-    : "#374151";
+  const swSide = getPlaySelectSideSwitchRect();
+  ctx.fillStyle = game.playModeFlipPlaySide ? "#1d4ed8" : "#374151";
+  ctx.fillRect(swSide.x, swSide.y, swSide.w, swSide.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(swSide.x, swSide.y, swSide.w, swSide.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 15px Arial";
+  ctx.fillText(
+    game.playModeFlipPlaySide ? "Switch: Left" : "Switch: Right",
+    swSide.x + swSide.w / 2,
+    swSide.y + swSide.h / 2 + 5
+  );
+
+  const defColor = game.selectedDefense === "B" ? "#1d4ed8" : "#dc2626";
   ctx.fillStyle = defColor;
   ctx.fillRect(dt.x, dt.y, dt.w, dt.h);
   ctx.strokeStyle = COLORS.white;
@@ -3583,15 +4399,7 @@ function drawPlaySelectOverlay() {
   ctx.strokeRect(dt.x, dt.y, dt.w, dt.h);
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 15px Arial";
-  const defLabel = game.selectedDefense === "A"
-    ? "Run Defense"
-    : game.selectedDefense === "B"
-    ? "Pass Defense"
-    : game.selectedDefense === "C"
-    ? "De-fence"
-    : game.selectedDefense === "D"
-    ? "Prevent"
-    : "?";
+  const defLabel = game.selectedDefense === "B" ? "2-3" : "3-2";
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 
 }
@@ -3637,7 +4445,13 @@ function drawMobileTouchControls() {
     ctx.restore();
   }
 
-  if (["playing", "prePlayCadence"].includes(game.state) && game.cpuOffense) {
+  const barnDoorBootSwitch =
+    game.mode === "play" &&
+    game.playModeCurrentPlay === "barnDoorBoot" &&
+    !game.passPlayDropbackDone &&
+    !game.cpuOffense &&
+    (game.state === "prePlayCadence" || game.barnDoorBootStage < 2);
+  if (["playing", "prePlayCadence"].includes(game.state) && (game.cpuOffense || barnDoorBootSwitch)) {
     const sw = getMobileSwitchButtonRect();
     ctx.save();
     ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
@@ -3668,7 +4482,14 @@ function drawMobileTouchControls() {
   }
 }
 
-/** Field + players + ball (+ pass-aim) for live play or instant replay. */
+/** Full field + players + scoreboard (fixed field position — even margins to canvas like the original). */
+function drawFieldAndPlayAction() {
+  drawField();
+  drawPlayfieldActionLayer({ replay: false });
+  drawScoreboard();
+}
+
+/** Players, ball, LOS, pass-aim (+ optional replay). */
 function drawPlayfieldActionLayer(options = {}) {
   const asReplay = options.replay === true;
   if (game.mode === "play" && game.playModeLineX) {
@@ -3688,13 +4509,16 @@ function drawPlayfieldActionLayer(options = {}) {
     ctx.restore();
   }
 
-  drawScoreboard();
   drawPlayer(player1);
   drawPlayer(player2);
   drawPlayer(allyHorse);
   drawPlayer(allyDonkey);
   drawPlayer(cluckNorris);
   drawPlayer(lilTunnelPete);
+  drawPlayer(offenseP4);
+  drawPlayer(offenseP5);
+  drawPlayer(defenseP4);
+  drawPlayer(defenseP5);
   drawControlledDefenderMarker();
   drawBall();
   if (!asReplay && game.state === "playModeDowned" && game.fieldCelebrationTimer > 0) {
@@ -3713,16 +4537,18 @@ function drawPlayfieldActionLayer(options = {}) {
       game.passPlayDropbackDone &&
       game.passPlayCanThrow);
   if (showPassAim && !game.touchControlsEnabled) {
+    const mx = game.mouseX;
+    const my = game.mouseY;
     ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(player1.x, player1.y);
-    ctx.lineTo(game.mouseX, game.mouseY);
+    ctx.lineTo(mx, my);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.arc(game.mouseX, game.mouseY, 8, 0, Math.PI * 2);
+    ctx.arc(mx, my, 8, 0, Math.PI * 2);
     ctx.strokeStyle = "#fbbf24";
     ctx.stroke();
   }
@@ -3769,6 +4595,7 @@ function drawInstantReplayScene() {
   drawPlayfieldActionLayer({ replay: true });
 
   ctx.restore();
+  drawScoreboard();
   applyReplaySnapshot(backup);
 }
 
@@ -3831,6 +4658,21 @@ function render() {
     return;
   }
 
+  if (game.state === "settingsMenu") {
+    drawSettingsMenu();
+    return;
+  }
+
+  if (game.state === "playSessionSelect") {
+    drawPlaySessionSelect();
+    return;
+  }
+
+  if (game.state === "playMomentSelect") {
+    drawPlayMomentSelect();
+    return;
+  }
+
   if (game.state === "playTeamSelect") {
     drawField();
     drawTeamSelectOverlay();
@@ -3849,9 +4691,7 @@ function render() {
     return;
   }
 
-  drawField();
-
-  drawPlayfieldActionLayer({ replay: false });
+  drawFieldAndPlayAction();
 
   if (game.state === "pauseMenu") {
     drawPauseMenu();
@@ -3859,11 +4699,33 @@ function render() {
     return;
   }
 
-  if (game.state === "puntAim") {
-    drawField();
-    drawPlayfieldActionLayer({ replay: false });
+  if (game.state === "statsMenu") {
+    drawStatsMenu();
+    drawMobileTouchControls();
+    return;
+  }
+
+  if (game.state === "puntAim" || game.state === "kickoffAim") {
+    drawFieldAndPlayAction();
     drawPuntAimOverlay();
     drawMobileTouchControls();
+    return;
+  }
+
+  if (game.state === "kickoffPlay") {
+    drawFieldAndPlayAction();
+    drawKickoffRestrainingLine();
+    drawMobileTouchControls();
+    return;
+  }
+
+  if (game.state === "kickoffFlagPopup") {
+    drawKickoffFlagPopup();
+    return;
+  }
+
+  if (game.state === "halftimePopup") {
+    drawHalftimePopup();
     return;
   }
 

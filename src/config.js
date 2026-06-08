@@ -12,10 +12,200 @@ const FIELD = {
   endZoneWidth: 110
 };
 
+/**
+ * Top-down goal posts in `drawField` sit on the goal line at this inset from each field edge (px).
+ * The midpoint between the two posts is the midfield / 50 line — same X the play camera uses for the LOS.
+ */
+const FIELD_GOAL_POST_INSET_PX = 14;
+
+function getFieldGoalPostsMidlineX() {
+  const leftGoalLineX = FIELD.x + FIELD_GOAL_POST_INSET_PX;
+  const rightGoalLineX = FIELD.x + FIELD.width - FIELD_GOAL_POST_INSET_PX;
+  return (leftGoalLineX + rightGoalLineX) / 2;
+}
+
 // Menu button layout (canvas coordinates) for hit testing
 const MENU_BUTTONS = {
-  playMode: { x: 360, y: 320, w: 240, h: 52 }
+  playMode: { x: 360, y: 300, w: 240, h: 52 },
+  settings: { x: 360, y: 362, w: 240, h: 52 }
 };
+
+const GAME_SETTINGS_STORAGE_KEY = "fff_game_settings_v2";
+const DEFAULT_GAME_SETTINGS = { quarterLengthMin: 4, difficulty: "normal" };
+const PASS_PLAY_KEYS = new Set([
+  "passRight",
+  "passLeft",
+  "barnPlay",
+  "scrambledEggs",
+  "barnDoorBoot",
+  "pigPenScreen",
+  "cornfieldCross"
+]);
+const RUN_PLAY_KEYS = new Set(["sweepRight", "sweepLeft", "diveRight", "diveLeft"]);
+const STATS_CATEGORIES = ["passing", "receiving", "rushing", "defense"];
+
+function loadGameSettings() {
+  try {
+    const raw = localStorage.getItem(GAME_SETTINGS_STORAGE_KEY) || localStorage.getItem("fff_game_settings_v1");
+    if (!raw) return { ...DEFAULT_GAME_SETTINGS };
+    const parsed = JSON.parse(raw);
+    const q = Number(parsed.quarterLengthMin);
+    return {
+      quarterLengthMin: Number.isFinite(q) ? clamp(Math.round(q), 1, 12) : DEFAULT_GAME_SETTINGS.quarterLengthMin,
+      difficulty: DIFFICULTY_ORDER.includes(parsed.difficulty) ? parsed.difficulty : DEFAULT_GAME_SETTINGS.difficulty
+    };
+  } catch (_e) {
+    return { ...DEFAULT_GAME_SETTINGS };
+  }
+}
+
+function saveGameSettings(settings) {
+  const q = clamp(Math.round(settings.quarterLengthMin || DEFAULT_GAME_SETTINGS.quarterLengthMin), 1, 12);
+  const difficulty = DIFFICULTY_ORDER.includes(settings.difficulty) ? settings.difficulty : DEFAULT_GAME_SETTINGS.difficulty;
+  const next = { quarterLengthMin: q, difficulty };
+  localStorage.setItem(GAME_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+function getQuarterLengthMs() {
+  return loadGameSettings().quarterLengthMin * 60 * 1000;
+}
+
+function formatGameClockMs(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec < 10 ? "0" : ""}${sec}`;
+}
+
+function getSettingsMenuLayout() {
+  const cx = canvas.width / 2;
+  const diffW = 148;
+  const diffGap = 10;
+  const diffTotal = diffW * 3 + diffGap * 2;
+  const diffX0 = cx - diffTotal / 2;
+  return {
+    back: { x: 36, y: 488, w: 120, h: 36 },
+    minus: { x: cx - 130, y: 210, w: 56, h: 56 },
+    plus: { x: cx + 74, y: 210, w: 56, h: 56 },
+    done: { x: cx - 100, y: 430, w: 200, h: 48 },
+    diffEasy: { x: diffX0, y: 332, w: diffW, h: 44 },
+    diffNormal: { x: diffX0 + diffW + diffGap, y: 332, w: diffW, h: 44 },
+    diffHard: { x: diffX0 + (diffW + diffGap) * 2, y: 332, w: diffW, h: 44 }
+  };
+}
+
+function getStatsMenuLayout() {
+  const cx = canvas.width / 2;
+  const tabW = 108;
+  const gap = 8;
+  const total = tabW * 4 + gap * 3;
+  const x0 = cx - total / 2;
+  const y = 168;
+  return {
+    back: { x: 330, y: 430, w: 300, h: 48 },
+    tabs: STATS_CATEGORIES.reduce((acc, key, i) => {
+      acc[key] = { x: x0 + i * (tabW + gap), y, w: tabW, h: 34 };
+      return acc;
+    }, {})
+  };
+}
+
+/** Top-level play modes (after main-menu Play). */
+const PLAY_SESSION_TOP = {
+  offense: {
+    label: "Play Offense",
+    sub: "Your drives only — no kickoffs"
+  },
+  defense: {
+    label: "Play Defense",
+    sub: "Stop the CPU — no kickoffs"
+  },
+  wholeGame: {
+    label: "Play Whole Game",
+    sub: "Coin toss, kickoffs, quarters, first to 21"
+  },
+  moments: {
+    label: "Play Moments",
+    sub: "Quick situational drills"
+  }
+};
+
+const PLAY_SESSION_TOP_KEYS = ["offense", "defense", "wholeGame", "moments"];
+
+/** Moment drills — chosen from Play Moments sub-menu. */
+const PLAY_MOMENT_KINDS = {
+  momentThirdDown: {
+    label: "3rd Down",
+    sub: "Offense — convert on 3rd"
+  },
+  momentFieldGoal: {
+    label: "Field Goal",
+    sub: "Offense — kick for 3"
+  },
+  momentRedZone: {
+    label: "Red Zone",
+    sub: "Offense — score from the 10"
+  },
+  momentDefenseThirdDown: {
+    label: "3rd Down Stop",
+    sub: "Defense — stop them on 3rd"
+  },
+  momentDefenseRedZone: {
+    label: "Red Zone Stand",
+    sub: "Defense — hold in the red zone"
+  }
+};
+
+const PLAY_MOMENT_KEYS = Object.keys(PLAY_MOMENT_KINDS);
+
+/** All runnable session kinds (top modes + moments). */
+const PLAY_SESSION_KINDS = Object.assign({}, PLAY_SESSION_TOP, PLAY_MOMENT_KINDS);
+delete PLAY_SESSION_KINDS.moments;
+
+function isPlaySessionMomentKind(kind) {
+  return !!kind && kind.indexOf("moment") === 0;
+}
+
+function isRunnablePlaySessionKind(kind) {
+  return !!kind && kind !== "moments" && !!PLAY_SESSION_KINDS[kind];
+}
+
+function getPlaySessionSelectLayout() {
+  const cx = canvas.width / 2;
+  const w = 300;
+  const h = 52;
+  const gap = 14;
+  const x = cx - w / 2;
+  const y0 = 130;
+  return {
+    back: { x: 36, y: 488, w: 120, h: 36 },
+    offense: { x, y: y0, w, h },
+    defense: { x, y: y0 + (h + gap), w, h },
+    wholeGame: { x, y: y0 + (h + gap) * 2, w, h },
+    moments: { x, y: y0 + (h + gap) * 3, w, h }
+  };
+}
+
+function getPlayMomentSelectLayout() {
+  const cx = canvas.width / 2;
+  const w = 300;
+  const h = 46;
+  const gap = 10;
+  const x = cx - w / 2;
+  const y0 = 118;
+  const layout = {
+    back: { x: 36, y: 488, w: 120, h: 36 }
+  };
+  PLAY_MOMENT_KEYS.forEach((key, i) => {
+    layout[key] = { x, y: y0 + i * (h + gap), w, h };
+  });
+  return layout;
+}
+
+function getPlaySessionLabel(kind) {
+  return (PLAY_SESSION_KINDS[kind] && PLAY_SESSION_KINDS[kind].label) || "Play";
+}
 
 /** 4th down: Punt vs Field Goal vs Go for it (canvas coords). */
 function getFourthDownChoiceRects() {
@@ -48,40 +238,39 @@ function getPostTouchdownChoiceRects() {
 
 // Pause overlay menu (shown when Escape is pressed during a game)
 const PAUSE_MENU_BUTTONS = {
-  resume: { x: 330, y: 176, w: 300, h: 48 },
-  instantReplay: { x: 330, y: 232, w: 300, h: 48 },
-  modeRestart: { x: 330, y: 292, w: 300, h: 52 },
-  home: { x: 330, y: 354, w: 300, h: 52 }
+  resume: { x: 330, y: 168, w: 300, h: 44 },
+  stats: { x: 330, y: 220, w: 300, h: 44 },
+  instantReplay: { x: 330, y: 272, w: 300, h: 44 },
+  modeRestart: { x: 330, y: 328, w: 300, h: 48 },
+  home: { x: 330, y: 386, w: 300, h: 48 }
 };
 
 // Play Mode — 4 plays per page; optional filter (all / run / pass) on the play sheet
 const PLAY_SELECT_PLAYS_PER_PAGE = 4;
-const PLAY_CATEGORY_RUN = ["sweepLeft", "sweepRight", "diveRight", "diveLeft"];
-const PLAY_CATEGORY_PASS = [
-  "passLeft",
-  "passRight",
-  "barnPlay",
-  "scrambledEggs",
-  "barnDoorBoot",
-  "pigPenScreen",
-  "cornfieldCross",
-  "roosterRollout"
-];
+const PLAY_DEFINITIONS = {
+  sweepRight: { category: "run", directional: true, cpuEligible: true },
+  diveRight: { category: "run", directional: true, cpuEligible: true },
+  passRight: { category: "pass", directional: true, cpuEligible: true },
+  barnPlay: { category: "pass", directional: false, cpuEligible: true },
+  scrambledEggs: { category: "pass", directional: false, cpuEligible: true },
+  barnDoorBoot: { category: "pass", directional: false, cpuEligible: false },
+  pigPenScreen: { category: "pass", directional: false, cpuEligible: false },
+  cornfieldCross: { category: "pass", directional: false, cpuEligible: false }
+};
+const PLAY_CATEGORY_RUN = Object.keys(PLAY_DEFINITIONS).filter((k) => PLAY_DEFINITIONS[k].category === "run");
+const PLAY_CATEGORY_PASS = Object.keys(PLAY_DEFINITIONS).filter((k) => PLAY_DEFINITIONS[k].category === "pass");
 const PLAY_ORDER_ALL = PLAY_CATEGORY_RUN.concat(PLAY_CATEGORY_PASS);
+const PLAY_DIRECTIONAL_BASE_KEYS = new Set(["sweepRight", "passRight", "diveRight"]);
 
 const PLAY_SELECT_LABELS = {
-  sweepLeft: "Sweep Left",
-  sweepRight: "Sweep Right",
-  passLeft: "Pass Left",
-  passRight: "Pass Right",
+  sweepRight: "Sweep",
+  passRight: "Pass",
   barnPlay: "Barn Play",
   scrambledEggs: "Scrambled Eggs",
   barnDoorBoot: "Barn Door Boot",
   pigPenScreen: "Pig Pen Screen",
   cornfieldCross: "Cornfield Cross",
-  roosterRollout: "Rooster Rollout",
-  diveRight: "Stretch Right",
-  diveLeft: "Stretch Left"
+  diveRight: "Stretch"
 };
 
 const PLAY_SELECT_PANEL = { x: 40, y: 88, w: 880, h: 398 };
@@ -93,6 +282,7 @@ const PLAY_SELECT_FILTER_H = 36;
 const PLAY_SELECT_TITLE_Y = 72;
 const PLAY_SELECT_DOWN_Y = 94;
 const PLAY_SELECT_ROW_Y = 122;
+const PLAY_SELECT_BTN_H = 118;
 
 function getFilteredPlayOrder() {
   if (game.playModePlayFilter === "run") return PLAY_CATEGORY_RUN.slice();
@@ -183,9 +373,9 @@ function getDefenseSelectFilterBarRects() {
 }
 
 function getFilteredDefenseOptionOrder() {
-  const run = ["A", "C"];
-  const pass = ["B", "D"];
-  const all = ["A", "B", "C", "D", "random"];
+  const run = ["A"];
+  const pass = ["B"];
+  const all = ["A", "B"];
   if (game.defenseModeDefenseFilter === "run") return run;
   if (game.defenseModeDefenseFilter === "pass") return pass;
   return all;
@@ -212,7 +402,7 @@ function getPlaySelectSlots(pageIndex) {
   if (n === 0) return [];
   const innerW = P.w - 2 * sidePad;
   const btnW = (innerW - (n - 1) * gap) / n;
-  const btnH = 84;
+  const btnH = PLAY_SELECT_BTN_H;
   const rowY = P.y + PLAY_SELECT_ROW_Y;
   return slice.map((key, i) => ({
     key,
@@ -224,7 +414,7 @@ function getPlaySelectSlots(pageIndex) {
 }
 
 function getPlaySelectPlayRowBottom() {
-  return PLAY_SELECT_PANEL.y + PLAY_SELECT_ROW_Y + 84;
+  return PLAY_SELECT_PANEL.y + PLAY_SELECT_ROW_Y + PLAY_SELECT_BTN_H;
 }
 
 function getPlaySelectDividerY() {
@@ -234,11 +424,31 @@ function getPlaySelectDividerY() {
 
 function getPlaySelectDefenseToggleRect() {
   return {
-    x: 370,
+    x: 490,
     y: getPlaySelectDividerY() + 22,
     w: 220,
     h: 36
   };
+}
+
+function getPlaySelectSideSwitchRect() {
+  return {
+    x: 250,
+    y: getPlaySelectDividerY() + 22,
+    w: 220,
+    h: 36
+  };
+}
+
+function resolvePlayKeyForSelectedSide(playKey) {
+  if (!PLAY_DIRECTIONAL_BASE_KEYS.has(playKey)) return playKey;
+  return game.playModeFlipPlaySide ? playKey.replace("Right", "Left") : playKey;
+}
+
+function getPlaySelectLabel(playKey) {
+  const base = PLAY_SELECT_LABELS[playKey] || playKey;
+  if (!PLAY_DIRECTIONAL_BASE_KEYS.has(playKey)) return base;
+  return `${base} ${game.playModeFlipPlaySide ? "Left" : "Right"}`;
 }
 
 function getPlaySelectPageNavRects() {
@@ -294,8 +504,8 @@ const CONFIG = {
   playModePointsToWin: 21,
   playerRadius: 20,
   ballRadius: 9,
-  playerSpeed: 112.5,
-  cpuSpeed: 112.5,
+  playerSpeed: 98,
+  cpuSpeed: 98,
   possessionPickupLockMs: 220,
   scorePauseMs: 1400,
   stealDistanceMultiplier: 0.8,
@@ -372,7 +582,7 @@ function getPatKickZone(t) {
 // Game State
 // =========================================================
 const game = {
-  state: "menu", // ... | "puntAim" | "touchdownPopup" | "postTouchdownChoice" | "patKick" | ...
+  state: "menu", // ... | "puntAim" | "kickoffAim" | "kickoffPlay" | "touchdownPopup" | "postTouchdownChoice" | "patKick" | ...
   coinTossPhase: null, // null | "pickCall" | "flipping" | "result" | "userChooseSide" | "userChooseDirection" | "cpuChose"
   coinTossCall: null, // null | "heads" | "tails" — player's call before the flip
   coinTossResult: null, // null | "heads" | "tails"
@@ -381,9 +591,26 @@ const game = {
   coinTossCpuDirection: null, // null | "left" | "right" — which way CPU chooses to attack
   coinTossUserChoiceSide: null, // null | "offense" | "defense" — cached before direction pick
   coinTossFlipTimer: 0,
-  teamSelectUser: null,   // "noFlyZone" | "pasture" | "barnaby" | "professorPig" | null
+  teamSelectUser: null,   // noFlyZone | pasture | barnaby | professorPig | creekCrew | null
+  teamSelectPage: 0,      // index 0..PLAY_TEAM_IDS.length-1
   playUserTeamId: null,
   playCpuTeamId: null,
+  /** wholeGame | offense | defense | momentThirdDown | … — see PLAY_SESSION_KINDS */
+  playSessionKind: null,
+  gameSettings: loadGameSettings(),
+  /** Whole-game quarter clock (Q1–Q4, optional OT). */
+  clockQuarter: 1,
+  clockMsRemaining: 0,
+  clockInitialized: false,
+  clockExpiredPending: false,
+  halftimeShown: false,
+  halftimePopupTimer: 0,
+  /** Per-team box score for whole game. */
+  teamStats: null,
+  statsCategory: "passing",
+  passAttemptPending: false,
+  runAttemptPending: false,
+  pendingPassTarget: null,
   teamScores: null,       // per-team points (6 TD, +1 PAT, +2 two-point)
   stateBeforePauseMenu: null,
   mode: null,   // "game" | "passing" | "play"
@@ -399,7 +626,9 @@ const game = {
   playModeDown: 1,
   playModeMaxDowns: 4,
   playModeLineX: 0,
-  playModePhase: null,   // null | "handoff" | "toss" | "sweep"
+  playModePhase: null,   // null | "snap" | "handoff" | "toss" | "sweep"
+  playModeSweepSnapMs: 0,
+  playModePassSnapMs: 0,
   playModeCurrentPlay: null,
   playModeSweepHandoffT: 0,
   touchdownPopupTimer: 0,
@@ -409,6 +638,7 @@ const game = {
   fieldCelebrationX: 0,
   winPopupTimer: 0,
   safetyPopupTimer: 0,
+  safetyAgainstCpuOffense: false,
   afterTouchdownAction: null,
   patKickCursor: 0,
   patKickDirection: 1,
@@ -446,6 +676,22 @@ const game = {
   puntAimCharging: false,
   kickoffActive: false,
   kickoffReceivingCpuOffense: false,
+  kickoffSequencePhase: null,
+  kickoffSequenceTimer: 0,
+  kickoffSequenceFlightT: 0,
+  kickoffSequenceKickFromX: 0,
+  kickoffSequenceKickDir: 1,
+  kickoffSequenceBlockerWallX: 0,
+  kickoffSequenceMinimumLineX: 0,
+  kickoffSequenceBallX: 0,
+  kickoffSequenceBallY: 0,
+  kickoffFlagPopupTimer: 0,
+  kickoffFlagMessage: "",
+  kickoffSequenceReceivingSpot: 0,
+  kickoffSequenceLandingY: 0,
+  kickoffPrimaryReturnerId: "cluckNorris",
+  kickoffSequenceReturnTargetX: 0,
+  kickoffSequenceNextCpuOffense: false,
   puntDistanceYards: 38,
   puntPhase: null,
   puntPhaseTimer: 0,
@@ -456,7 +702,7 @@ const game = {
   puntReturnMs: 0,
   puntReturnStartX: 0,
   puntPunterAssist: false,
-  playModeDefense: null,       // "A" | "B"
+  playModeDefense: null,       // "A" | "B" (3-2 | 2-3)
   defenseReactionTimer: 0,     // ms remaining before Defense A's Hee Haw reacts to the WR
   passDefCovering: null,       // which defender covers WR on Defense B
   passDefRushing: null,        // which defender rushes QB on Defense B
@@ -488,10 +734,19 @@ const game = {
   cluckNorrisTimer: 0,           // ms remaining before Cluck Norris starts pursuing
   peteBlockTimer: 0,             // ms remaining on Pete's current block (max 500)
   peteBlockTargetId: null,       // id of the defender Pete is currently blocking
-  selectedDefense: "random",     // "A" | "B" | "C" | "D" | "random" — player's chosen defensive scheme
+  playModeSweepWrBlockMs: 0,     // guaranteed WR lead-block window after sweep pitch catch
+  sweepWrEngageP4Ms: 0,          // remaining lock time when defenseP4 is engaged by a WR block
+  sweepWrEngageCluckMs: 0,       // remaining lock time when Cluck is engaged by a WR block
+  stretchCenterBlockMs: 0,       // remaining lock time for center's stretch block
+  stretchCenterBlockTargetId: null,
+  stretchFbBlockMs: 0,           // remaining lock time for fullback's stretch block
+  stretchFbBlockTargetId: null,
+  stretchFbBlockArmed: false,    // FB is ready to start a full hold on first engagement
+  selectedDefense: "A",     // "A" | "B" — 3-2 / 2-3
   passDefDeepTarget: null,       // "horse" | "pete" — which receiver Cluck Norris is assigned (Defense B)
   playModePlaySelectPage: 0,     // horizontal play picker page index
   playModePlayFilter: null,     // null = all plays | "run" | "pass"
+  playModeFlipPlaySide: false,
   prePlayCadenceIndex: 0,
   prePlayCadenceTimer: 0,
   defenseModeDefenseFilter: null, // null = all | "run" | "pass" (CPU offense / pick defense)
@@ -522,7 +777,7 @@ const keys = {};
 
 const player1 = {
   id: "player1",
-  name: "Barnaby the Donkey",
+  name: "Barnaby",
   displayLabel: "Barnaby",
   appearanceId: "player1",
   teamOwnerId: "player1",
@@ -606,7 +861,6 @@ const allyDonkey = {
   ballAccent: "#bbf7d0"
 };
 
-// Professor Pig's team — new defender
 const cluckNorris = {
   id: "cluckNorris",
   name: "Big Coop",
@@ -617,11 +871,10 @@ const cluckNorris = {
   y: 0,
   radius: CONFIG.playerRadius,
   speed: CONFIG.cpuSpeed,
-  color: "#ffffff",  // white feathers
+  color: "#ffffff",
   ballAccent: "#fca5a5"
 };
 
-// Barnaby's team — new blocker/receiver
 const lilTunnelPete = {
   id: "lilTunnelPete",
   name: "Lil' Tunnel Pete",
@@ -631,7 +884,64 @@ const lilTunnelPete = {
   x: 0,
   y: 0,
   radius: CONFIG.playerRadius,
-  speed: CONFIG.playerSpeed,
-  color: "#c8a97e",  // tan
+  speed: CONFIG.playerSpeed * 0.72,
+  color: "#c8a97e",
   ballAccent: "#fef08a"
+};
+
+/** Play mode — extra offense (p4 = sweep RB, p5 = wing) and defense (p4/p5). */
+const offenseP4 = {
+  id: "offenseP4",
+  name: "RB",
+  displayLabel: "RB",
+  appearanceId: "squadA",
+  teamOwnerId: "player1",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.playerSpeed,
+  color: "#64748b",
+  ballAccent: "#fef08a"
+};
+
+const offenseP5 = {
+  id: "offenseP5",
+  name: "Wing",
+  displayLabel: "Wing",
+  appearanceId: "squadB",
+  teamOwnerId: "player1",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.playerSpeed,
+  color: "#0f766e",
+  ballAccent: "#a7f3d0"
+};
+
+const defenseP4 = {
+  id: "defenseP4",
+  name: "DB4",
+  displayLabel: "DB4",
+  appearanceId: "squadA",
+  teamOwnerId: "player2",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.cpuSpeed,
+  color: "#64748b",
+  ballAccent: "#fef08a"
+};
+
+const defenseP5 = {
+  id: "defenseP5",
+  name: "DB5",
+  displayLabel: "DB5",
+  appearanceId: "squadB",
+  teamOwnerId: "player2",
+  x: 0,
+  y: 0,
+  radius: CONFIG.playerRadius,
+  speed: CONFIG.cpuSpeed,
+  color: "#0f766e",
+  ballAccent: "#a7f3d0"
 };

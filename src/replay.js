@@ -13,7 +13,11 @@ const ENTITY_BY_ID = {
   allyHorse,
   allyDonkey,
   cluckNorris,
-  lilTunnelPete
+  lilTunnelPete,
+  offenseP4,
+  offenseP5,
+  defenseP4,
+  defenseP5
 };
 
 let replayBuffer = [];
@@ -36,6 +40,10 @@ function captureReplaySnapshot() {
     allyDonkey: { x: allyDonkey.x, y: allyDonkey.y },
     cluckNorris: { x: cluckNorris.x, y: cluckNorris.y },
     lilTunnelPete: { x: lilTunnelPete.x, y: lilTunnelPete.y },
+    offenseP4: { x: offenseP4.x, y: offenseP4.y },
+    offenseP5: { x: offenseP5.x, y: offenseP5.y },
+    defenseP4: { x: defenseP4.x, y: defenseP4.y },
+    defenseP5: { x: defenseP5.x, y: defenseP5.y },
     ball: {
       x: ball.x,
       y: ball.y,
@@ -55,6 +63,8 @@ function captureReplaySnapshot() {
     playModePhase: game.playModePhase,
     playModeCurrentPlay: game.playModeCurrentPlay,
     playModeSweepHandoffT: game.playModeSweepHandoffT,
+    playModeSweepSnapMs: game.playModeSweepSnapMs,
+    playModePassSnapMs: game.playModePassSnapMs,
     passPlayTargetReceiver: game.passPlayTargetReceiver,
     passPlayDropbackDone: game.passPlayDropbackDone,
     passPlayCanThrow: game.passPlayCanThrow,
@@ -84,6 +94,22 @@ function applyReplaySnapshot(snap) {
   cluckNorris.y = snap.cluckNorris.y;
   lilTunnelPete.x = snap.lilTunnelPete.x;
   lilTunnelPete.y = snap.lilTunnelPete.y;
+  if (snap.offenseP4) {
+    offenseP4.x = snap.offenseP4.x;
+    offenseP4.y = snap.offenseP4.y;
+  }
+  if (snap.offenseP5) {
+    offenseP5.x = snap.offenseP5.x;
+    offenseP5.y = snap.offenseP5.y;
+  }
+  if (snap.defenseP4) {
+    defenseP4.x = snap.defenseP4.x;
+    defenseP4.y = snap.defenseP4.y;
+  }
+  if (snap.defenseP5) {
+    defenseP5.x = snap.defenseP5.x;
+    defenseP5.y = snap.defenseP5.y;
+  }
 
   const b = snap.ball;
   ball.x = b.x;
@@ -104,6 +130,8 @@ function applyReplaySnapshot(snap) {
   game.playModePhase = snap.playModePhase;
   game.playModeCurrentPlay = snap.playModeCurrentPlay;
   game.playModeSweepHandoffT = snap.playModeSweepHandoffT;
+  game.playModeSweepSnapMs = snap.playModeSweepSnapMs ?? 0;
+  game.playModePassSnapMs = snap.playModePassSnapMs ?? 0;
   game.passPlayTargetReceiver = snap.passPlayTargetReceiver;
   game.passPlayDropbackDone = snap.passPlayDropbackDone;
   game.passPlayCanThrow = snap.passPlayCanThrow;
