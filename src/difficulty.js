@@ -8,13 +8,13 @@ const DIFFICULTY_PRESETS = {
   easy: {
     label: "Easy",
     sub: "Slower CPU · softer coverage · fewer fumbles",
-    cpuOffenseSpeed: 0.86,
+    cpuOffenseSpeed: 0.92,
     cpuDefenseSpeed: 0.84,
-    passCompletionMult: 0.78,
+    passCompletionMult: 0.88,
     defenseReactionMult: 1.4,
     cluckDelayMult: 1.45,
     patTargetHalfWidth: 0.16,
-    cpuFourthDownFg: 0.4,
+    cpuFourthDownFg: 0.52,
     kickoffChargeMin: 0.48,
     kickoffChargeRange: 0.28,
     userFumbleMult: 0.55,
@@ -23,13 +23,13 @@ const DIFFICULTY_PRESETS = {
   normal: {
     label: "Normal",
     sub: "Balanced challenge",
-    cpuOffenseSpeed: 1,
+    cpuOffenseSpeed: 1.06,
     cpuDefenseSpeed: 1,
-    passCompletionMult: 1,
+    passCompletionMult: 1.1,
     defenseReactionMult: 1,
     cluckDelayMult: 1,
     patTargetHalfWidth: 0.09,
-    cpuFourthDownFg: 0.58,
+    cpuFourthDownFg: 0.68,
     kickoffChargeMin: 0.62,
     kickoffChargeRange: 0.38,
     userFumbleMult: 1,
@@ -38,13 +38,13 @@ const DIFFICULTY_PRESETS = {
   hard: {
     label: "Hard",
     sub: "Fast CPU · sharper passes · quicker rush",
-    cpuOffenseSpeed: 1.14,
+    cpuOffenseSpeed: 1.18,
     cpuDefenseSpeed: 1.16,
-    passCompletionMult: 1.2,
+    passCompletionMult: 1.24,
     defenseReactionMult: 0.68,
     cluckDelayMult: 0.62,
     patTargetHalfWidth: 0.045,
-    cpuFourthDownFg: 0.74,
+    cpuFourthDownFg: 0.82,
     kickoffChargeMin: 0.7,
     kickoffChargeRange: 0.28,
     userFumbleMult: 1.4,
@@ -84,17 +84,27 @@ function applyDifficultyTeamSpeeds(cpuOffense) {
 
   all.forEach((entity) => {
     if (entity.baseSpeed == null) entity.baseSpeed = entity.speed;
-    entity.speed = entity.baseSpeed;
   });
 
   const scaleList = (list, mult) => {
     list.forEach((entity) => {
-      entity.speed = entity.baseSpeed * mult;
+      entity._difficultySpeedMult = mult;
+      if (typeof recalcEntityMoveSpeed === "function") recalcEntityMoveSpeed(entity);
+      else {
+        const attrMult = entity.attrSpeedMult != null ? entity.attrSpeedMult : 1;
+        entity.speed = entity.baseSpeed * attrMult * mult;
+      }
     });
   };
 
-  if (cpuOffense) scaleList(offenseEntities, d.cpuOffenseSpeed);
-  else scaleList(defenseEntities, d.cpuDefenseSpeed);
+  const idleMult = 1;
+  if (cpuOffense) {
+    scaleList(offenseEntities, d.cpuOffenseSpeed);
+    scaleList(defenseEntities, idleMult);
+  } else {
+    scaleList(defenseEntities, d.cpuDefenseSpeed);
+    scaleList(offenseEntities, idleMult);
+  }
 }
 
 function getAdjustedPassPlayTuning(playKey) {
@@ -102,7 +112,7 @@ function getAdjustedPassPlayTuning(playKey) {
   const d = getDifficultyPreset();
   return {
     ...base,
-    completionChance: clamp(base.completionChance * d.passCompletionMult, 0.12, 0.92),
+    completionChance: clamp(base.completionChance * d.passCompletionMult, 0.38, 0.94),
     throwMinMs: Math.max(280, Math.round(base.throwMinMs / Math.max(0.75, d.cpuOffenseSpeed)))
   };
 }

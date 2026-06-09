@@ -4,6 +4,7 @@
 game.touchControlsEnabled = ("ontouchstart" in window) || window.matchMedia("(pointer: coarse)").matches;
 
 let joystickTouchId = null;
+let passAimTouchId = null;
 let suppressClickUntil = 0;
 const PLAY_MODE_PASS_KEYS = new Set([
   "passRight",
@@ -11,8 +12,11 @@ const PLAY_MODE_PASS_KEYS = new Set([
   "barnPlay",
   "scrambledEggs",
   "barnDoorBoot",
-  "pigPenScreen",
-  "cornfieldCross"
+  "hayBaleHook",
+  "cornfieldCross",
+  "siloSlant",
+  "pasturePop",
+  "fencePost"
 ]);
 
 function getCanvasCoords(e) {
@@ -74,8 +78,36 @@ function isThrowReady() {
     (game.mode === "play"
       && PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
       && ball.carrier === player1 && !ball.inFlight
-      && game.passPlayDropbackDone && game.passPlayCanThrow)
+      && typeof canThrowOnCurrentPassPlay === "function"
+      && canThrowOnCurrentPassPlay())
   );
+}
+
+function shouldStartPassAimTouch(p) {
+  if (!game.touchControlsEnabled || getMobilePassAimMode() !== "hold") return false;
+  if (!isThrowReady()) return false;
+  return p.x >= canvas.width * 0.48 && p.y >= canvas.height * 0.32;
+}
+
+function releasePassAimThrow() {
+  if (!isThrowReady()) return;
+  const tx = clamp(game.mouseX, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
+  const ty = clamp(game.mouseY, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
+  if (game.mode === "passing") {
+    ball.targetX = tx;
+    ball.targetY = ty;
+    ball.inFlight = true;
+    ball.carrier = null;
+    game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
+    return;
+  }
+  const preferred =
+    game.playModeCurrentPlay === "hayBaleHook" || game.playModeCurrentPlay === "siloSlant"
+      ? "horse"
+      : game.playModeCurrentPlay === "pasturePop"
+        ? "pete"
+        : null;
+  startPlayModePassThrow(tx, ty, preferred);
 }
 
 function shouldStartTouchStick(p) {
@@ -88,8 +120,9 @@ function shouldStartTouchStick(p) {
 }
 
 function handleCanvasTap(p) {
-  game.mouseX = p.x;
-  game.mouseY = p.y;
+  const fp = typeof pointerToFieldCoords === "function" ? pointerToFieldCoords(p) : p;
+  game.mouseX = fp.x;
+  game.mouseY = fp.y;
 
   if (game.state === "patKick" && game.patKickSubPhase === "aim") {
     commitPatKick();
@@ -190,14 +223,89 @@ function handleCanvasTap(p) {
     return;
   }
 
+  if (game.state === "franchiseMain") {
+    const L = getFranchiseMainLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.back)) {
+      game.state = "menu";
+      startMenuMusic();
+      return;
+    }
+    if (hit(L.newGame)) {
+      game.franchisePickTeam = true;
+      game.teamSelectUser = null;
+      game.state = "playTeamSelect";
+      return;
+    }
+    if (hit(L.continueGame) && loadFranchise()) {
+      initFranchiseState(loadFranchise());
+      game.state = "franchiseHub";
+      game.franchisePanel = "home";
+      return;
+    }
+    if (hit(L.deleteSave) && loadFranchise()) {
+      deleteFranchiseSave();
+      return;
+    }
+    return;
+  }
+
+  if (game.state === "franchiseHub") {
+    handleFranchiseHubClick(p);
+    return;
+  }
+
+  if (game.state === "franchisePlaySelect") {
+    handleFranchisePlaySelectClick(p);
+    return;
+  }
+
+  if (game.state === "playDevTraitsGuide") {
+    const L = getDevTraitsGuideLayout();
+    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.back)) {
+      closeDevTraitsGuide();
+      return;
+    }
+    if (hit(L.overviewTab)) {
+      game.devTraitsGuideTab = "overview";
+      return;
+    }
+    if (hit(L.teamsTab)) {
+      game.devTraitsGuideTab = "teams";
+      return;
+    }
+    if (game.devTraitsGuideTab === "teams") {
+      const maxP = getTeamSelectPageCount() - 1;
+      if (hit(L.prevTeam)) {
+        game.devTraitsGuideTeamPage = Math.max(0, (game.devTraitsGuideTeamPage || 0) - 1);
+        return;
+      }
+      if (hit(L.nextTeam)) {
+        game.devTraitsGuideTeamPage = Math.min(maxP, (game.devTraitsGuideTeamPage || 0) + 1);
+        return;
+      }
+    }
+    return;
+  }
+
   if (game.state === "playTeamSelect") {
     const L = getTeamSelectLayout();
     const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    if (hit(L.devGuide)) {
+      openDevTraitsGuide("playTeamSelect");
+      game.devTraitsGuideTab = "teams";
+      return;
+    }
     if (hit(L.back)) {
-      const returnToMoments = isPlaySessionMomentKind(game.playSessionKind);
       game.teamSelectUser = null;
+      if (game.franchisePickTeam) {
+        game.franchisePickTeam = false;
+        game.state = "franchiseMain";
+        return;
+      }
       game.playSessionKind = null;
-      game.state = returnToMoments ? "playMomentSelect" : "playSessionSelect";
+      game.state = "playSessionSelect";
       return;
     }
     const tnav = getTeamSelectPageNavRects();
@@ -219,6 +327,13 @@ function handleCanvasTap(p) {
     if (hit(L.start)) {
       if (!game.teamSelectUser) {
         game.teamSelectUser = getTeamIdForTeamSelectPage(game.teamSelectPage);
+      }
+      if (game.franchisePickTeam) {
+        initFranchiseState(createNewFranchise(game.teamSelectUser));
+        game.franchisePickTeam = false;
+        game.state = "franchiseHub";
+        game.franchisePanel = "home";
+        return;
       }
       advanceToOpponentReveal();
       return;
@@ -245,14 +360,26 @@ function handleCanvasTap(p) {
 
   if (game.state === "menu") {
     const pl = MENU_BUTTONS.playMode;
+    const fr = MENU_BUTTONS.franchise;
     const st = MENU_BUTTONS.settings;
     if (p.x >= pl.x && p.x <= pl.x + pl.w && p.y >= pl.y && p.y <= pl.y + pl.h) {
       startPlayMode();
       return;
     }
+    if (p.x >= fr.x && p.x <= fr.x + fr.w && p.y >= fr.y && p.y <= fr.y + fr.h) {
+      beginPlaySession("franchise");
+      return;
+    }
     if (p.x >= st.x && p.x <= st.x + st.w && p.y >= st.y && p.y <= st.y + st.h) {
       game.gameSettings = loadGameSettings();
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
       game.state = "settingsMenu";
+      return;
+    }
+    const dt = MENU_BUTTONS.devTraits;
+    if (p.x >= dt.x && p.x <= dt.x + dt.w && p.y >= dt.y && p.y <= dt.y + dt.h) {
+      openDevTraitsGuide("menu");
+      game.devTraitsGuideTab = "overview";
       return;
     }
     return;
@@ -267,27 +394,12 @@ function handleCanvasTap(p) {
       startMenuMusic();
       return;
     }
-    if (hit(L.moments)) {
-      game.state = "playMomentSelect";
+    if (hit(L.devTraits)) {
+      openDevTraitsGuide("playSessionSelect");
+      game.devTraitsGuideTab = "overview";
       return;
     }
-    for (const key of ["offense", "defense", "wholeGame"]) {
-      if (hit(L[key])) {
-        beginPlaySession(key);
-        return;
-      }
-    }
-    return;
-  }
-
-  if (game.state === "playMomentSelect") {
-    const L = getPlayMomentSelectLayout();
-    const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
-    if (hit(L.back)) {
-      game.state = "playSessionSelect";
-      return;
-    }
-    for (const key of PLAY_MOMENT_KEYS) {
+    for (const key of PLAY_SESSION_TOP_KEYS) {
       if (hit(L[key])) {
         beginPlaySession(key);
         return;
@@ -300,16 +412,38 @@ function handleCanvasTap(p) {
     const L = getSettingsMenuLayout();
     const hit = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
     if (hit(L.back)) {
+      game.gameSettings = loadGameSettings();
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
       game.state = "menu";
       startMenuMusic();
       return;
     }
-    if (hit(L.minus)) {
+    if (hit(L.minusQ)) {
       game.gameSettings.quarterLengthMin = clamp(game.gameSettings.quarterLengthMin - 1, 1, 12);
       return;
     }
-    if (hit(L.plus)) {
+    if (hit(L.plusQ)) {
       game.gameSettings.quarterLengthMin = clamp(game.gameSettings.quarterLengthMin + 1, 1, 12);
+      return;
+    }
+    if (hit(L.minusMusic)) {
+      game.gameSettings.musicVolume = clamp(game.gameSettings.musicVolume - 5, 0, 100);
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
+      return;
+    }
+    if (hit(L.plusMusic)) {
+      game.gameSettings.musicVolume = clamp(game.gameSettings.musicVolume + 5, 0, 100);
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
+      return;
+    }
+    if (hit(L.minusSfx)) {
+      game.gameSettings.sfxVolume = clamp(game.gameSettings.sfxVolume - 5, 0, 100);
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
+      return;
+    }
+    if (hit(L.plusSfx)) {
+      game.gameSettings.sfxVolume = clamp(game.gameSettings.sfxVolume + 5, 0, 100);
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
       return;
     }
     if (hit(L.diffEasy)) {
@@ -322,6 +456,34 @@ function handleCanvasTap(p) {
     }
     if (hit(L.diffHard)) {
       game.gameSettings.difficulty = "hard";
+      return;
+    }
+    if (hit(L.otOff)) {
+      game.gameSettings.overtimeMode = "off";
+      return;
+    }
+    if (hit(L.otFull)) {
+      game.gameSettings.overtimeMode = "full";
+      return;
+    }
+    if (hit(L.otSudden)) {
+      game.gameSettings.overtimeMode = "suddenDeath";
+      return;
+    }
+    if (hit(L.passTap)) {
+      game.gameSettings.mobilePassAim = "tap";
+      return;
+    }
+    if (hit(L.passHold)) {
+      game.gameSettings.mobilePassAim = "hold";
+      return;
+    }
+    if (hit(L.summaryOn)) {
+      game.gameSettings.showDriveSummary = true;
+      return;
+    }
+    if (hit(L.summaryOff)) {
+      game.gameSettings.showDriveSummary = false;
       return;
     }
     if (hit(L.done)) {
@@ -388,6 +550,11 @@ function handleCanvasTap(p) {
       return;
     }
     if (p.x >= home.x && p.x <= home.x + home.w && p.y >= home.y && p.y <= home.y + home.h) {
+      if (game.franchiseActive && typeof returnToFranchiseHub === "function") {
+        returnToFranchiseHub();
+        game.stateBeforePauseMenu = null;
+        return;
+      }
       game.state = "menu";
       game.stateBeforePauseMenu = null;
       startMenuMusic();
@@ -403,13 +570,21 @@ function handleCanvasTap(p) {
   if (game.state === "interceptionPopup") {
     return;
   }
+  if (game.state === "sessionPossessionRecap") {
+    completeSessionPossessionRecap();
+    return;
+  }
+  if (game.state === "driveSummary") {
+    completeDriveSummary();
+    return;
+  }
   if (game.state === "playModeDowned") {
     if (game.playModeLastResultType === "interception") {
       if (game.twoPointAttemptActive) {
         completeTwoPointConversionFailed();
         return;
       }
-      if (isPlaySessionMoment() || game.playSessionKind === "offense") {
+      if (game.playSessionKind === "offense") {
         handlePlaySessionSeriesEnd();
         return;
       }
@@ -562,31 +737,67 @@ function handleCanvasTap(p) {
       }
     }
   }
+  if (canShowJukeButton()) {
+    const juke = getMobileJukeButtonRect();
+    if (p.x >= juke.x && p.x <= juke.x + juke.w && p.y >= juke.y && p.y <= juke.y + juke.h) {
+      const carrier = getUserOffenseBallCarrier();
+      if (carrier) tryStartCarrierJuke(carrier);
+      return;
+    }
+  }
   if (game.state === "playing" && game.mode === "passing" && ball.carrier === player1 && !ball.inFlight) {
-    const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
-    const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
-    ball.targetX = tx;
-    ball.targetY = ty;
-    ball.inFlight = true;
-    ball.carrier = null;
-    game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
+    if (!(game.touchControlsEnabled && getMobilePassAimMode() === "hold")) {
+      const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
+      const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
+      ball.targetX = tx;
+      ball.targetY = ty;
+      ball.inFlight = true;
+      ball.carrier = null;
+      game.reacquireCooldownP1 = CONFIG.reacquireCooldownMs;
+    }
   }
   if (game.state === "playing" && game.mode === "play"
       && PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
       && ball.carrier === player1 && !ball.inFlight
-      && game.passPlayDropbackDone && game.passPlayCanThrow) {
+      && typeof canThrowOnCurrentPassPlay === "function"
+      && canThrowOnCurrentPassPlay()
+      && !(game.touchControlsEnabled && getMobilePassAimMode() === "hold")) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
-    const preferred = game.playModeCurrentPlay === "pigPenScreen" ? "horse" : null;
+    const preferred =
+      game.playModeCurrentPlay === "hayBaleHook" || game.playModeCurrentPlay === "siloSlant"
+        ? "horse"
+        : game.playModeCurrentPlay === "pasturePop"
+          ? "pete"
+          : null;
     startPlayModePassThrow(tx, ty, preferred);
   }
 }
 
 window.addEventListener("mousemove", (e) => {
   const p = getCanvasCoords(e);
-  game.mouseX = p.x;
-  game.mouseY = p.y;
+  const fp = typeof pointerToFieldCoords === "function" ? pointerToFieldCoords(p) : p;
+  game.mouseX = fp.x;
+  game.mouseY = fp.y;
 });
+
+canvas.addEventListener("wheel", (e) => {
+  if (game.state !== "franchiseHub") return;
+  const f = typeof getActiveFranchise === "function" ? getActiveFranchise() : null;
+  if (!f) return;
+  const panelId = typeof resolveFranchisePanel === "function" ? resolveFranchisePanel(f) : null;
+  const delta = e.deltaY > 0 ? 1 : -1;
+  if (panelId === "roster") {
+    e.preventDefault();
+    game.franchiseRosterScroll = Math.max(0, (game.franchiseRosterScroll || 0) + delta);
+    return;
+  }
+  if (panelId === "trade") {
+    e.preventDefault();
+    const max = PLAY_TEAM_IDS.length - 2;
+    game.franchiseTradeTeamScroll = Math.max(0, Math.min(max, (game.franchiseTradeTeamScroll || 0) + delta));
+  }
+}, { passive: false });
 
 window.addEventListener("click", (e) => {
   if (Date.now() < suppressClickUntil) return;
@@ -624,6 +835,11 @@ canvas.addEventListener("touchstart", (e) => {
     if (joystickTouchId === null && shouldStartTouchStick(p)) {
       joystickTouchId = t.identifier;
       updateTouchStickFromPoint(p);
+    } else if (passAimTouchId === null && shouldStartPassAimTouch(p)) {
+      passAimTouchId = t.identifier;
+      const fp = typeof pointerToFieldCoords === "function" ? pointerToFieldCoords(p) : p;
+      game.mouseX = fp.x;
+      game.mouseY = fp.y;
     } else {
       handleCanvasTap(p);
     }
@@ -640,6 +856,11 @@ canvas.addEventListener("touchmove", (e) => {
       game.mouseX = p.x;
       game.mouseY = p.y;
       updateTouchStickFromPoint(p);
+    } else if (t.identifier === passAimTouchId) {
+      const p = getCanvasCoords(t);
+      const fp = typeof pointerToFieldCoords === "function" ? pointerToFieldCoords(p) : p;
+      game.mouseX = fp.x;
+      game.mouseY = fp.y;
     }
   }
   if (e.cancelable) e.preventDefault();
@@ -654,10 +875,14 @@ function handleTouchEnd(e) {
     return;
   }
   for (const t of e.changedTouches) {
+    if (t.identifier === passAimTouchId) {
+      passAimTouchId = null;
+      releasePassAimThrow();
+      continue;
+    }
     if (t.identifier === joystickTouchId) {
       joystickTouchId = null;
       resetTouchStick();
-      break;
     }
   }
   if (e.cancelable) e.preventDefault();
@@ -818,6 +1043,21 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if ((key === "enter" || key === " ") && game.state === "sessionPossessionRecap") {
+    completeSessionPossessionRecap();
+    return;
+  }
+
+  if ((key === "enter" || key === " ") && game.state === "driveSummary") {
+    completeDriveSummary();
+    return;
+  }
+
+  if (key === "r" && game.state === "gameOver" && game.franchiseActive) {
+    e.preventDefault();
+    completeFranchisePlayedGame(getActiveFranchise());
+    return;
+  }
   if (key === "r" && game.state === "gameOver") {
     if (game.mode === "play") {
       if (game.playUserTeamId) resetPlayModeTeamScores();
@@ -835,7 +1075,7 @@ window.addEventListener("keydown", (e) => {
         completeTwoPointConversionFailed();
         return;
       }
-      if (isPlaySessionMoment() || game.playSessionKind === "offense") {
+      if (game.playSessionKind === "offense") {
         handlePlaySessionSeriesEnd();
         return;
       }
@@ -852,6 +1092,10 @@ window.addEventListener("keydown", (e) => {
     } else if (game.cpuOffense) {
       cycleDefenseControlledPlayer();
     }
+  } else if (key === "e" && game.state === "playing" && !game.cpuOffense) {
+    e.preventDefault();
+    const carrier = getUserOffenseBallCarrier();
+    if (carrier) tryStartCarrierJuke(carrier);
   } else if (key === "a" && game.state === "playModePlaySelect" && !game.cpuOffense) {
     setPlayModePlayFilter(null);
   } else if (key === "r" && game.state === "playModePlaySelect" && !game.cpuOffense) {
@@ -900,6 +1144,24 @@ window.addEventListener("keydown", (e) => {
       }
       e.preventDefault();
     }
+  } else if (game.state === "playDevTraitsGuide") {
+    if (key === "1" || key === "o") {
+      game.devTraitsGuideTab = "overview";
+      e.preventDefault();
+    } else if (key === "2" || key === "t") {
+      game.devTraitsGuideTab = "teams";
+      e.preventDefault();
+    } else if (game.devTraitsGuideTab === "teams" && (key === "arrowleft" || key === "arrowright")) {
+      const pages = getTeamSelectPageCount();
+      if (pages > 1) {
+        if (key === "arrowleft") {
+          game.devTraitsGuideTeamPage = Math.max(0, (game.devTraitsGuideTeamPage || 0) - 1);
+        } else {
+          game.devTraitsGuideTeamPage = Math.min(pages - 1, (game.devTraitsGuideTeamPage || 0) + 1);
+        }
+        e.preventDefault();
+      }
+    }
   }
   if (["1", "2", "3", "4"].includes(key) && game.state === "playModePlaySelect") {
     e.preventDefault();
@@ -912,12 +1174,20 @@ window.addEventListener("keydown", (e) => {
       backFromCoinTossToOpponentReveal();
     } else if (game.state === "playOpponentReveal") {
       backFromOpponentRevealToTeamSelect();
-    } else if (game.state === "playMomentSelect") {
-      game.state = "playSessionSelect";
     } else if (game.state === "playSessionSelect") {
       game.playSessionKind = null;
       game.state = "menu";
       startMenuMusic();
+    } else if (game.state === "playDevTraitsGuide") {
+      closeDevTraitsGuide();
+    } else if (game.state === "franchisePlaySelect") {
+      game.state = "franchiseHub";
+    } else if (game.state === "franchiseHub" || game.state === "franchiseMain") {
+      if (game.state === "franchiseHub") game.state = "franchiseMain";
+      else {
+        game.state = "menu";
+        startMenuMusic();
+      }
     } else if (game.state === "playTeamSelect") {
       returnToHomeMenu();
     } else if (game.state === "pauseMenu") {
@@ -926,6 +1196,8 @@ window.addEventListener("keydown", (e) => {
     } else if (game.state === "statsMenu") {
       game.state = "pauseMenu";
     } else if (game.state === "settingsMenu") {
+      game.gameSettings = loadGameSettings();
+      if (typeof applyGameSettingsAudio === "function") applyGameSettingsAudio(game.gameSettings);
       game.state = "menu";
       startMenuMusic();
     } else if (game.state === "halftimePopup") {
@@ -991,12 +1263,13 @@ function updatePlayerInput(dt) {
   );
   const offenseP4CarrierControlled =
     isPlayMode &&
+    ball.carrier === offenseP4 &&
     (
       game.playModeCurrentPlay === "sweepRight" ||
       game.playModeCurrentPlay === "sweepLeft" ||
-      (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run")
-    ) &&
-    ball.carrier === offenseP4;
+      (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
+      PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
+    );
   if (isPlayMode && ball.carrier === allyHorse) {
     const rbSpeedMult = 1.0;
     allyHorse.x += dx * allyHorse.speed * rbSpeedMult * dt;

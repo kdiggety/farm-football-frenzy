@@ -7,7 +7,8 @@ barnBgImage.src = "assets/barn_retro.png";
 const teamBannerImages = {};
 for (const id of PLAY_TEAM_IDS) {
   const im = new Image();
-  im.src = TEAMS[id].bannerSrc;
+  const src = TEAMS[id] && TEAMS[id].bannerSrc;
+  if (src) im.src = src;
   teamBannerImages[id] = im;
 }
 
@@ -56,25 +57,12 @@ function drawAnnouncerPortrait(x, y, height) {
   ctx.restore();
 }
 
-/** Draw team banner with cover fit inside rect (clipped). */
+/** Draw team banner — PNG art when available, otherwise unique procedural logo. */
 function drawTeamBannerImage(teamId, x, y, w, h) {
-  const img = teamBannerImages[teamId];
-  if (!img || !img.complete || !img.naturalWidth) return;
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const scale = Math.max(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
-  ctx.drawImage(img, dx, dy, dw, dh);
-  ctx.restore();
+  if (typeof drawTeamLogoOrBanner === "function") {
+    drawTeamLogoOrBanner(ctx, teamId, x, y, w, h, { round: false });
+    return;
+  }
 }
 
 /** Team that begins on offense (player1's squad); used for midfield logo. */
@@ -87,7 +75,6 @@ function getMidfieldOffenseTeamId() {
 /** Circular midfield logo — offense team's banner (Haymakers in classic mode). */
 function drawMidfieldOffenseLogo() {
   const teamId = getMidfieldOffenseTeamId();
-  const img = teamBannerImages[teamId];
   const midX = getFieldGoalPostsMidlineX();
   const midY = FIELD.y + FIELD.height / 2;
   const logoR = 70;
@@ -97,20 +84,13 @@ function drawMidfieldOffenseLogo() {
   ctx.ellipse(midX, midY + 30, 86, 20, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (!img || !img.complete || !img.naturalWidth) return;
-
   ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
   ctx.beginPath();
   ctx.arc(midX, midY, logoR, 0, Math.PI * 2);
   ctx.clip();
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const scale = Math.max((logoR * 2) / iw, (logoR * 2) / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  ctx.drawImage(img, midX - dw / 2, midY - dh / 2, dw, dh);
+  if (typeof drawTeamLogoOrBanner === "function") {
+    drawTeamLogoOrBanner(ctx, teamId, midX - logoR, midY - logoR, logoR * 2, logoR * 2, { round: true });
+  }
   ctx.restore();
 
   ctx.strokeStyle = "rgba(255,255,255,0.92)";
@@ -658,25 +638,6 @@ function drawPlayer(player, renderCtx) {
   const R = player.radius;
   const sc = R / 20;
 
-  let dropbackDx = 0;
-  let dropbackDy = 0;
-  if (
-    player === player1 &&
-    game.mode === "play" &&
-    game.state === "prePlayCadence" &&
-    typeof getQbDropbackPreviewRenderPoint === "function"
-  ) {
-    const pt = getQbDropbackPreviewRenderPoint(game.playModeCurrentPlay);
-    if (pt) {
-      dropbackDx = pt.x - player.x;
-      dropbackDy = pt.y - player.y;
-    }
-  }
-  if (dropbackDx !== 0 || dropbackDy !== 0) {
-    c.save();
-    c.translate(dropbackDx, dropbackDy);
-  }
-
   drawShadow(
     player.x,
     player.y + R + 8 * sc,
@@ -1144,6 +1105,11 @@ function drawPlayer(player, renderCtx) {
 
   // Label
   if (!player.suppressNameTag) {
+    const traitInfo =
+      typeof getEntityDevTraitInfo === "function" ? getEntityDevTraitInfo(player) : null;
+    if (traitInfo && typeof drawDevTraitFieldMarker === "function") {
+      drawDevTraitFieldMarker(c, player.x, player.y - (ball.carrier === player ? 52 : 42) * sc, traitInfo, sc);
+    }
     c.fillStyle = COLORS.white;
     c.font = "bold 14px Arial";
     c.textAlign = "center";
@@ -1157,7 +1123,13 @@ function drawPlayer(player, renderCtx) {
     c.fillText("BALL", player.x, player.y - 44 * sc);
   }
 
-  if (dropbackDx !== 0 || dropbackDy !== 0) {
+  if ((player.jukeActiveMs || 0) > 0 || (player.jukeIFrameMs || 0) > 0) {
+    c.save();
+    c.strokeStyle = "rgba(251, 191, 36, 0.9)";
+    c.lineWidth = 3;
+    c.beginPath();
+    c.arc(player.x, player.y, R + 6 * sc, 0, Math.PI * 2);
+    c.stroke();
     c.restore();
   }
 }
@@ -1195,15 +1167,17 @@ function drawBall() {
   ctx.stroke();
 }
 
+const SCOREBOARD_H = 76;
+
 function drawScoreboard() {
-  drawRect(0, 0, canvas.width, 58, "#111827");
+  drawRect(0, 0, canvas.width, SCOREBOARD_H, "#111827");
 
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 26px Arial";
+  ctx.font = "bold 22px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("Farm Football Frenzy", canvas.width / 2, 36);
+  ctx.fillText("Farm Football Frenzy", canvas.width / 2, 24);
 
-  ctx.font = "bold 20px Arial";
+  ctx.font = "bold 18px Arial";
   const teamMode = game.playUserTeamId && game.teamScores;
   let leftText;
   let rightText;
@@ -1227,38 +1201,37 @@ function drawScoreboard() {
   const rightColor = "#f9a8d4";
   ctx.textAlign = "left";
   ctx.fillStyle = leftColor;
-  ctx.fillText(leftText, 24, 36);
+  ctx.fillText(leftText, 24, 28);
 
   ctx.textAlign = "right";
   ctx.fillStyle = rightColor;
-  ctx.fillText(rightText, canvas.width - 24, 36);
+  ctx.fillText(rightText, canvas.width - 24, 28);
 
   if (game.mode === "play") {
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#e5e7eb";
-    ctx.font = "14px Arial";
     const sessionLabel = game.playSessionKind ? getPlaySessionLabel(game.playSessionKind) : "Play Mode";
     const modeLabel = game.cpuOffense
       ? (game.turnoverSeriesActive ? "Turnover — you're on D" : "CPU offense — you're on D")
       : sessionLabel;
-    const scoreLine = playSessionTracksFullGameScore()
-      ? ` · First to ${CONFIG.playModePointsToWin} pts · ${getDifficultyLabel(game.gameSettings.difficulty)}`
-      : "";
-    ctx.fillText(
-      `${modeLabel}: Down ${game.playModeDown} of ${game.playModeMaxDowns}${scoreLine}`,
-      canvas.width / 2,
-      54
-    );
-    if (playSessionUsesGameClock && game.clockInitialized) {
+    const downDistance =
+      typeof formatPlayModeDownDistance === "function"
+        ? formatPlayModeDownDistance()
+        : `Down ${game.playModeDown}`;
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 17px Arial";
+    ctx.fillText(downDistance, canvas.width / 2, 48);
+
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = "13px Arial";
+    ctx.fillText(modeLabel, canvas.width / 2, 64);
+
+    if (playSessionUsesGameClock() && game.clockInitialized) {
       const qLabel = game.clockQuarter >= 5 ? "OT" : `Q${game.clockQuarter}`;
-      const clockColor = game.clockExpiredPending ? "#fca5a5" : "#fde68a";
+      const clockColor = game.clockExpiredPending ? "#fca5a5" : "#93c5fd";
       ctx.fillStyle = clockColor;
-      ctx.font = "bold 15px Arial";
-      ctx.fillText(
-        `${qLabel}  ${formatGameClockMs(game.clockMsRemaining)}`,
-        canvas.width / 2,
-        72
-      );
+      ctx.font = "bold 16px Arial";
+      ctx.fillText(`${qLabel}  ${formatGameClockMs(game.clockMsRemaining)}`, canvas.width / 2, 72);
     }
   }
 }
@@ -1290,6 +1263,98 @@ function buildPlayResultText() {
 function shouldShowFarmerAnnouncerForPlayResult() {
   const rt = game.playModeLastResultType;
   return rt === "interception" || rt === "fumbleTurnover" || rt === "gain" || rt === "loss" || rt === "sack";
+}
+
+function drawSessionPossessionRecap() {
+  const plays = game.sessionRecapPlays || [];
+  const title = game.playSessionKind === "offense"
+    ? `${game.sessionRecapTeamLabel} POSSESSION`
+    : `${game.sessionRecapTeamLabel} OFFENSE`;
+  const resultLine = getSessionSimDriveResultLabel(game.sessionRecapDriveResult);
+  const maxRows = 8;
+  const visible = plays.slice(0, maxRows);
+  const hidden = Math.max(0, plays.length - visible.length);
+  const rowH = 34;
+  const boxH = 118 + visible.length * rowH + (hidden > 0 ? 22 : 0);
+  const boxY = Math.round((canvas.height - boxH) / 2) - 8;
+  const boxX = 150;
+  const boxW = 660;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.94)";
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = "#fde68a";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.textAlign = "center";
+  ctx.font = "bold 28px Arial";
+  ctx.fillStyle = "#fde68a";
+  ctx.fillText(title, canvas.width / 2, boxY + 36);
+
+  ctx.font = "16px Arial";
+  ctx.fillStyle = "#cbd5e1";
+  ctx.fillText("While you were on the sideline…", canvas.width / 2, boxY + 62);
+
+  const recapClockExtra =
+    game.sessionRecapClockElapsedMs > 0 && playSessionUsesGameClock() ? 18 : 0;
+  if (recapClockExtra > 0) {
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#93c5fd";
+    ctx.fillText(
+      `Clock ran ${formatGameClockMs(game.sessionRecapClockElapsedMs)} during this drive`,
+      canvas.width / 2,
+      boxY + 82
+    );
+  }
+
+  ctx.font = "bold 17px Arial";
+  ctx.fillStyle = "#86efac";
+  ctx.fillText(resultLine, canvas.width / 2, boxY + 88 + recapClockExtra);
+
+  ctx.textAlign = "left";
+  let y = boxY + 112 + recapClockExtra;
+  for (let i = 0; i < visible.length; i += 1) {
+    const play = visible[i];
+    const downLine = formatSessionSimDownLine(play.down, play.yardsToGo, play.yardLine);
+    const resultLineText = formatSessionSimPlayResult(play);
+    const resultColor =
+      play.resultType === "touchdown" || (play.resultType === "fieldGoal" && play.made)
+        ? "#4ade80"
+        : play.resultType === "gain"
+          ? "#86efac"
+          : play.resultType === "loss" || play.resultType === "sack"
+            ? "#fca5a5"
+            : play.resultType === "incomplete"
+              ? "#94a3b8"
+              : play.resultType === "interception" || play.resultType === "fumble"
+                ? "#f97316"
+                : "#e5e7eb";
+
+    ctx.font = "13px Arial";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText(downLine, boxX + 22, y);
+
+    ctx.font = "bold 15px Arial";
+    ctx.fillStyle = resultColor;
+    ctx.fillText(resultLineText, boxX + 22, y + 18);
+    y += rowH;
+  }
+
+  if (hidden > 0) {
+    ctx.font = "13px Arial";
+    ctx.fillStyle = "#64748b";
+    ctx.textAlign = "center";
+    ctx.fillText(`+ ${hidden} more play${hidden === 1 ? "" : "s"}`, canvas.width / 2, y + 6);
+  }
+
+  ctx.textAlign = "center";
+  ctx.font = "16px Arial";
+  ctx.fillStyle = COLORS.white;
+  const hint = game.touchControlsEnabled ? "Tap to continue" : "Press Enter to continue";
+  ctx.fillText(hint, canvas.width / 2, boxY + boxH - 16);
 }
 
 function drawCenterMessage(title, subtitle, detail, buttonText = null, titleStyle = null, showAnnouncer = false) {
@@ -2557,7 +2622,7 @@ function drawMenu() {
   ctx.fillText("Farm Football Frenzy", canvas.width / 2, 160);
   ctx.font = "18px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Press Play — pick a mode, team, and go.", canvas.width / 2, 210);
+  ctx.fillText("Quick play or build a franchise dynasty.", canvas.width / 2, 210);
 
   const pl = MENU_BUTTONS.playMode;
 
@@ -2569,6 +2634,26 @@ function drawMenu() {
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
   ctx.fillText("Play", pl.x + pl.w / 2, pl.y + pl.h / 2 + 8);
+
+  const fr = MENU_BUTTONS.franchise;
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(fr.x, fr.y, fr.w, fr.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(fr.x, fr.y, fr.w, fr.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Franchise", fr.x + fr.w / 2, fr.y + fr.h / 2 + 8);
+
+  const dt = MENU_BUTTONS.devTraits;
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(dt.x, dt.y, dt.w, dt.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(dt.x, dt.y, dt.w, dt.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText("Dev Traits", dt.x + dt.w / 2, dt.y + dt.h / 2 + 8);
 
   const st = MENU_BUTTONS.settings;
   ctx.fillStyle = "#374151";
@@ -2582,7 +2667,215 @@ function drawMenu() {
 
   ctx.font = "14px Arial";
   ctx.fillStyle = "#9ca3af";
-  ctx.fillText("Offense, defense, whole game, or moments.", canvas.width / 2, 470);
+  ctx.fillText("Play: offense, defense, or whole game.", canvas.width / 2, 478);
+}
+
+function drawGuideTabButton(rect, label, active) {
+  ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = active ? "#facc15" : COLORS.white;
+  ctx.lineWidth = active ? 2.5 : 2;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 13px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
+}
+
+function wrapGuideText(text, maxW, font) {
+  ctx.font = font;
+  const words = String(text || "").split(" ");
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxW && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawDevTraitOverviewCard(x, y, w, h, traitId) {
+  const trait = getDevTraitDef(traitId);
+  const examples = typeof getDevTraitTierExamples === "function"
+    ? getDevTraitTierExamples(traitId)
+    : [];
+  ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = trait.color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = trait.color;
+  ctx.font = "bold 20px Arial";
+  ctx.fillText(`${trait.badge} ${trait.label}`, x + 14, y + 28);
+
+  const pad = 14;
+  const textW = w - pad * 2;
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "11px Arial";
+  let ty = y + 52;
+  for (const ln of wrapGuideText(trait.blurb, textW, "11px Arial")) {
+    ctx.fillText(ln, x + pad, ty);
+    ty += 14;
+  }
+  ty += 6;
+  ctx.fillStyle = "#fde68a";
+  ctx.font = "bold 11px Arial";
+  ctx.fillText("Example abilities:", x + pad, ty);
+  ty += 16;
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "11px Arial";
+  const exampleText = examples.length ? examples.join(" · ") : "See By team tab";
+  for (const ln of wrapGuideText(exampleText, textW, "11px Arial")) {
+    ctx.fillText(ln, x + pad, ty);
+    ty += 14;
+  }
+}
+
+function drawDevTraitsGuideTeamPanel(teamId, panel) {
+  const team = TEAMS[teamId];
+  if (!team) return;
+
+  const headerY = panel.y + 12;
+  drawTeamBannerImage(teamId, panel.x + 12, headerY, 88, 52);
+  ctx.textAlign = "left";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 22px Arial";
+  ctx.fillText(team.name, panel.x + 112, headerY + 22);
+  ctx.font = "11px Arial";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText("Each player’s dev tier and signature ability", panel.x + 112, headerY + 42);
+
+  const rowTop = panel.y + 78;
+  const rowH = 66;
+  const previewScale = 0.3;
+  const previewH = TEAM_SELECT_PLAYER_BUFFER.height * previewScale;
+  const slotLabels = DEV_TRAITS_GUIDE_SLOT_LABELS;
+
+  for (let i = 0; i < ROSTER_STARTER_KEYS.length; i += 1) {
+    const slotKey = ROSTER_STARTER_KEYS[i];
+    const entry = team.roster[slotKey];
+    const rowY = rowTop + i * rowH;
+    const traitInfo = getRosterDevTraitInfo(entry, slotKey);
+
+    if (i > 0) {
+      ctx.strokeStyle = "rgba(71, 85, 105, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(panel.x + 10, rowY - 4);
+      ctx.lineTo(panel.x + panel.w - 10, rowY - 4);
+      ctx.stroke();
+    }
+
+    drawRosterPlayerPreview(ctx, entry, panel.x + 14, rowY + 6, previewScale);
+
+    const textX = panel.x + 52;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 13px Arial";
+    ctx.fillText(entry.displayLabel, textX, rowY + 16);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 10px Arial";
+    ctx.fillText(slotLabels[slotKey] || slotKey.toUpperCase(), textX, rowY + 30);
+
+    drawDevTraitPill(ctx, panel.x + 198, rowY + 22, traitInfo, { w: 72, h: 22 });
+    ctx.fillStyle = traitInfo.color;
+    ctx.font = "bold 12px Arial";
+    ctx.fillText(traitInfo.abilityName, panel.x + 248, rowY + 18);
+
+    const descX = panel.x + 248;
+    const descW = panel.w - 262;
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "10px Arial";
+    let dy = rowY + 34;
+    for (const ln of wrapGuideText(`OFF: ${traitInfo.abilityOffDesc}`, descW, "10px Arial")) {
+      ctx.fillText(ln, descX, dy);
+      dy += 12;
+    }
+    ctx.fillStyle = "#94a3b8";
+    for (const ln of wrapGuideText(`DEF: ${traitInfo.abilityDefDesc}`, descW, "10px Arial")) {
+      ctx.fillText(ln, descX, dy);
+      dy += 12;
+    }
+  }
+}
+
+function drawDevTraitsGuide() {
+  drawMenuBackground();
+  ctx.fillStyle = "rgba(17, 24, 39, 0.9)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const L = getDevTraitsGuideLayout();
+  const tab = game.devTraitsGuideTab || "overview";
+  const mx = game.mouseX;
+  const my = game.mouseY;
+  const hit = (r) => r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+
+  drawGuideTabButton(L.overviewTab, "Trait guide", tab === "overview");
+  drawGuideTabButton(L.teamsTab, "By team", tab === "teams");
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("Development Traits", canvas.width / 2, 48);
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+  ctx.fillRect(L.panel.x, L.panel.y, L.panel.w, L.panel.h);
+  ctx.strokeStyle = "#475569";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(L.panel.x, L.panel.y, L.panel.w, L.panel.h);
+
+  if (tab === "overview") {
+    const gap = 16;
+    const cardW = (L.panel.w - gap * 3) / 2;
+    const cardH = (L.panel.h - gap * 3) / 2;
+    const x0 = L.panel.x + gap;
+    const y0 = L.panel.y + gap;
+    drawDevTraitOverviewCard(x0, y0, cardW, cardH, "superstar");
+    drawDevTraitOverviewCard(x0 + cardW + gap, y0, cardW, cardH, "star");
+    drawDevTraitOverviewCard(x0, y0 + cardH + gap, cardW, cardH, "normal");
+    drawDevTraitOverviewCard(x0 + cardW + gap, y0 + cardH + gap, cardW, cardH, "slow");
+  } else {
+    const pages = getTeamSelectPageCount();
+    const page = clamp(game.devTraitsGuideTeamPage || 0, 0, Math.max(0, pages - 1));
+    const teamId = getTeamIdForTeamSelectPage(page);
+    drawDevTraitsGuideTeamPanel(teamId, L.panel);
+
+    if (pages > 1) {
+      ctx.fillStyle = "#374151";
+      ctx.fillRect(L.prevTeam.x, L.prevTeam.y, L.prevTeam.w, L.prevTeam.h);
+      ctx.fillRect(L.nextTeam.x, L.nextTeam.y, L.nextTeam.w, L.nextTeam.h);
+      ctx.strokeStyle = COLORS.white;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(L.prevTeam.x, L.prevTeam.y, L.prevTeam.w, L.prevTeam.h);
+      ctx.strokeRect(L.nextTeam.x, L.nextTeam.y, L.nextTeam.w, L.nextTeam.h);
+      ctx.fillStyle = COLORS.white;
+      ctx.font = "bold 14px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("◀", L.prevTeam.x + L.prevTeam.w / 2, L.prevTeam.y + L.prevTeam.h / 2 + 5);
+      ctx.fillText("▶", L.nextTeam.x + L.nextTeam.w / 2, L.nextTeam.y + L.nextTeam.h / 2 + 5);
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#d1d5db";
+      ctx.fillText(`Team ${page + 1} / ${pages}`, canvas.width / 2, L.prevTeam.y - 8);
+    }
+  }
+
+  ctx.fillStyle = "rgba(55, 65, 81, 0.9)";
+  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 14px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
 }
 
 function drawPlaySessionButton(rect, label, sub, active) {
@@ -2631,39 +2924,118 @@ function drawPlaySessionSelect() {
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 14px Arial";
   ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+
+  if (L.devTraits) {
+    ctx.fillStyle = "#4c1d95";
+    ctx.fillRect(L.devTraits.x, L.devTraits.y, L.devTraits.w, L.devTraits.h);
+    ctx.strokeStyle = "#c4b5fd";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(L.devTraits.x, L.devTraits.y, L.devTraits.w, L.devTraits.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 13px Arial";
+    ctx.fillText("Dev traits", L.devTraits.x + L.devTraits.w / 2, L.devTraits.y + L.devTraits.h / 2 + 5);
+  }
 }
 
-function drawPlayMomentSelect() {
-  drawMenuBackground();
-  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+function drawAttributeRatingBars(ctx, x, y, w, ratings, barHOrOpts = 22) {
+  const opts = typeof barHOrOpts === "object" ? barHOrOpts : { barH: barHOrOpts };
+  const roster = opts.roster === true;
+  const barH = opts.barH != null ? opts.barH : roster ? 22 : 22;
+  const keyOrder = opts.keyOrder || ATTRIBUTE_KEYS;
+  const labelMap = opts.labels || ATTRIBUTE_SHORT_LABELS;
+  const compact = opts.compact === true && !roster;
+  const gap = roster ? 5 : compact ? 3 : 5;
+  const barW = (w - gap * (keyOrder.length - 1)) / keyOrder.length;
   ctx.textAlign = "center";
-  ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 34px Arial";
-  ctx.fillText("Play Moments", canvas.width / 2, 58);
-  ctx.font = "15px Arial";
-  ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Pick a situational drill.", canvas.width / 2, 88);
-
-  const L = getPlayMomentSelectLayout();
-  const mx = game.mouseX;
-  const my = game.mouseY;
-  const hit = (r) => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
-
-  for (const key of PLAY_MOMENT_KEYS) {
-    const preset = PLAY_MOMENT_KINDS[key];
-    drawPlaySessionButton(L[key], preset.label, preset.sub, hit(L[key]));
+  for (let i = 0; i < keyOrder.length; i += 1) {
+    const key = keyOrder[i];
+    const bx = x + i * (barW + gap);
+    const val = ratings[key];
+    ctx.fillStyle = "#1f2937";
+    ctx.fillRect(bx, y, barW, barH);
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = roster ? 1.5 : 1;
+    ctx.strokeRect(bx, y, barW, barH);
+    const fillH = Math.max(2, Math.round((val / 99) * barH));
+    ctx.fillStyle = getStatBarColor(val);
+    ctx.fillRect(bx + 1, y + barH - fillH - 1, barW - 2, fillH);
+    if (roster) {
+      ctx.font = "bold 10px Arial";
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText(String(val), bx + barW / 2, y + barH / 2 + 4);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "bold 8px Arial";
+      ctx.fillText(labelMap[key], bx + barW / 2, y + barH + 11);
+    } else if (compact) {
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "bold 6px Arial";
+      ctx.fillText(labelMap[key], bx + barW / 2, y + barH + 7);
+      ctx.font = "bold 7px Arial";
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText(String(val), bx + barW / 2, y + Math.max(8, barH - 3));
+    } else {
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "bold 7px Arial";
+      ctx.fillText(labelMap[key], bx + barW / 2, y + barH + 9);
+      ctx.font = "8px Arial";
+      ctx.fillStyle = "#f1f5f9";
+      ctx.fillText(String(val), bx + barW / 2, y + barH + 18);
+    }
   }
+}
 
-  ctx.fillStyle = "#4b5563";
-  ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
-  ctx.fillStyle = COLORS.white;
+function drawOvrBadge(ctx, cx, cy, label, ovr, w = 48, h = 32) {
+  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+  ctx.strokeStyle = getOvrTierColor(ovr);
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 7px Arial";
+  ctx.fillText(label, cx, cy - 5);
+  ctx.fillStyle = getOvrTierColor(ovr);
   ctx.font = "bold 14px Arial";
-  ctx.fillText("Back", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+  ctx.fillText(String(ovr), cx, cy + 8);
+}
+
+function drawRosterPlayerPreview(ctx, entry, destX, destY, scale) {
+  const PR = CONFIG.playerRadius;
+  const bw = TEAM_SELECT_PLAYER_BUFFER.width;
+  const bh = TEAM_SELECT_PLAYER_BUFFER.height;
+  const pctx = TEAM_SELECT_PLAYER_CTX;
+  pctx.setTransform(1, 0, 0, 1, 0, 0);
+  pctx.clearRect(0, 0, bw, bh);
+  drawPlayer(
+    {
+      x: TEAM_SELECT_PREVIEW_CX,
+      y: TEAM_SELECT_PREVIEW_CY,
+      radius: PR,
+      displayLabel: entry.displayLabel,
+      color: entry.color,
+      ballAccent: entry.ballAccent,
+      appearanceId: entry.appearanceId,
+      suppressNameTag: true
+    },
+    pctx
+  );
+  const destW = bw * scale;
+  const destH = bh * scale;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(
+    TEAM_SELECT_PLAYER_BUFFER,
+    0,
+    0,
+    bw,
+    bh,
+    destX,
+    destY,
+    destW,
+    destH
+  );
+  ctx.restore();
 }
 
 function drawTeamSelectOverlay() {
@@ -2678,13 +3050,17 @@ function drawTeamSelectOverlay() {
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 32px Arial";
-  ctx.fillText("Pick your team", canvas.width / 2, 50);
+  ctx.fillText("Pick your team", canvas.width / 2, 44);
+  ctx.font = "11px Arial";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText("Tap a team card to select · scroll pages with ◀ ▶", canvas.width / 2, 62);
 
   function drawCard(rect, tid, selected) {
     const pad = L.pad;
     const bannerH = L.bannerH;
     const nameStripH = L.nameStripH;
-    const PR = CONFIG.playerRadius;
+    const rowH = L.rosterRowH || 38;
+    const team = TEAMS[tid];
     ctx.fillStyle = "#374151";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     drawTeamBannerImage(tid, rect.x + pad, rect.y + pad, rect.w - pad * 2, bannerH);
@@ -2693,12 +3069,20 @@ function drawTeamSelectOverlay() {
     ctx.strokeStyle = selected ? "#fbbf24" : COLORS.white;
     ctx.lineWidth = selected ? 4 : 2;
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-    ctx.textAlign = "center";
+
+    const teamOffOvr = getTeamAverageOffOvr(team);
+    const teamDefOvr = getTeamAverageDefOvr(team);
+    ctx.textAlign = "left";
     ctx.fillStyle = COLORS.white;
-    ctx.font = "bold 20px Arial";
-    ctx.fillText(TEAMS[tid].name, rect.x + rect.w / 2, rect.y + pad + bannerH + 19);
-    const r = TEAMS[tid].roster;
-    const slots = ROSTER_ALL_KEYS;
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(team.name, rect.x + pad + 8, rect.y + pad + bannerH + 20);
+    ctx.textAlign = "right";
+    ctx.font = "bold 11px Arial";
+    ctx.fillStyle = getOvrTierColor(teamOffOvr);
+    ctx.fillText(`OFF ${teamOffOvr}`, rect.x + rect.w - pad - 8, rect.y + pad + bannerH + 14);
+    ctx.fillStyle = getOvrTierColor(teamDefOvr);
+    ctx.fillText(`DEF ${teamDefOvr}`, rect.x + rect.w - pad - 8, rect.y + pad + bannerH + 28);
+
     const slotLabelByKey = {
       qb: "QB",
       wr: "WR",
@@ -2706,71 +3090,100 @@ function drawTeamSelectOverlay() {
       p4: "RB",
       p5: "C"
     };
-    const innerW = rect.w - pad * 2;
-    const gutter = 2;
-    const colW = (innerW - gutter * 4) / 5;
-    const rosterTop = rect.y + pad + bannerH + nameStripH + 4;
-    const rosterBot = rect.y + rect.h - pad;
-    const nameLine1Y = rosterTop + 5;
-    const nameLine2Y = rosterTop + 12;
-    const maxLabelW = colW - 2;
-    const bw = TEAM_SELECT_PLAYER_BUFFER.width;
-    const bh = TEAM_SELECT_PLAYER_BUFFER.height;
-    let previewScale = Math.min((colW - 1) / bw, (rosterBot - nameLine2Y - 2) / bh, 0.85);
-    previewScale = Math.max(0.32, previewScale);
-    let destY = rosterBot - bh * previewScale - 2;
-    const minDestY = nameLine2Y + 8;
-    if (destY < minDestY) {
-      destY = minDestY;
-      previewScale = Math.max(0.35, (rosterBot - destY - 2) / bh);
-    }
-    const pctx = TEAM_SELECT_PLAYER_CTX;
-    pctx.setTransform(1, 0, 0, 1, 0, 0);
-    pctx.imageSmoothingEnabled = true;
-    if ("imageSmoothingQuality" in pctx) pctx.imageSmoothingQuality = "high";
-    function fitRosterName(text) {
-      ctx.font = "bold 7.5px Arial";
-      if (ctx.measureText(text).width <= maxLabelW) return text;
-      let s = text;
-      while (s.length > 1 && ctx.measureText(`${s}…`).width > maxLabelW) s = s.slice(0, -1);
-      return `${s}…`;
-    }
-    ctx.fillStyle = "#e5e7eb";
-    for (let i = 0; i < 5; i++) {
-      const cx = rect.x + pad + i * (colW + gutter) + colW / 2;
-      const entry = r[slots[i]];
-      ctx.fillText(fitRosterName(entry.displayLabel), cx, nameLine1Y);
-      ctx.save();
-      ctx.fillStyle = "#fef08a";
-      ctx.font = "bold 8px Arial";
-      ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-      ctx.shadowBlur = 2;
-      ctx.fillText(slotLabelByKey[slots[i]] || slots[i].toUpperCase(), cx, nameLine2Y);
-      ctx.restore();
-      ctx.fillStyle = "#e5e7eb";
-      ctx.font = "bold 7.5px Arial";
-      pctx.clearRect(0, 0, bw, bh);
-      drawPlayer(
-        {
-          x: TEAM_SELECT_PREVIEW_CX,
-          y: TEAM_SELECT_PREVIEW_CY,
-          radius: PR,
-          displayLabel: entry.displayLabel,
-          color: entry.color,
-          ballAccent: entry.ballAccent,
-          appearanceId: entry.appearanceId,
-          suppressNameTag: true
-        },
-        pctx
+    const rosterTop = rect.y + pad + bannerH + nameStripH + 6;
+    const innerLeft = rect.x + pad + 6;
+    const innerRight = rect.x + rect.w - pad - 6;
+    const innerW = innerRight - innerLeft;
+    const previewScale = 0.36;
+    const previewH = TEAM_SELECT_PLAYER_BUFFER.height * previewScale;
+    const nameX = innerLeft + 34;
+    const offOvrCx = innerLeft + 112;
+    const defOvrCx = innerLeft + 154;
+    const devCx = innerLeft + 196;
+    const statsGap = 10;
+    const statsLeft = innerLeft + 218;
+    const statsColW = Math.floor((innerRight - statsLeft - statsGap) / 2);
+    const offStatsX = statsLeft;
+    const defStatsX = statsLeft + statsColW + statsGap;
+    const statBarY = 8;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#64748b";
+    ctx.font = "bold 9px Arial";
+    ctx.fillText("PLAYER", nameX, rosterTop - 2);
+    ctx.textAlign = "center";
+    ctx.fillText("OFF", offOvrCx, rosterTop - 2);
+    ctx.fillText("DEF", defOvrCx, rosterTop - 2);
+    ctx.fillText("DEV", devCx, rosterTop - 2);
+    ctx.textAlign = "center";
+    ctx.fillText("OFFENSE", offStatsX + statsColW / 2, rosterTop - 2);
+    ctx.fillText("DEFENSE", defStatsX + statsColW / 2, rosterTop - 2);
+
+    for (let i = 0; i < ROSTER_ALL_KEYS.length; i += 1) {
+      const slotKey = ROSTER_ALL_KEYS[i];
+      const entry = team.roster[slotKey];
+      const rowY = rosterTop + 4 + i * rowH;
+      const attrs = getRosterEntryAttributes(entry, slotKey);
+      const defAttrs = getRosterEntryDefAttributes(entry, slotKey);
+      const ratings = getAttributeRatings(attrs);
+      const defRatings = getDefAttributeRatings(defAttrs);
+      const offOvr = getPlayerOffOvr(attrs, slotKey);
+      const defOvr = getPlayerDefOvr(defAttrs, slotKey);
+
+      if (i > 0) {
+        ctx.strokeStyle = "rgba(71, 85, 105, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(innerLeft, rowY - 2);
+        ctx.lineTo(innerRight, rowY - 2);
+        ctx.stroke();
+      }
+
+      drawRosterPlayerPreview(
+        ctx,
+        entry,
+        innerLeft,
+        rowY + (rowH - previewH) / 2 - 2,
+        previewScale
       );
-      const destW = bw * previewScale;
-      const destH = bh * previewScale;
-      const destX = cx - TEAM_SELECT_PREVIEW_CX * previewScale;
-      ctx.save();
-      ctx.imageSmoothingEnabled = true;
-      if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(TEAM_SELECT_PLAYER_BUFFER, 0, 0, bw, bh, destX, destY, destW, destH);
-      ctx.restore();
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "bold 11px Arial";
+      let name = entry.displayLabel;
+      const maxNameW = 118;
+      while (name.length > 1 && ctx.measureText(name).width > maxNameW) {
+        name = name.slice(0, -1);
+      }
+      if (name.length < entry.displayLabel.length) name += "…";
+      ctx.fillText(name, nameX, rowY + 12);
+      const traitInfo = typeof getRosterDevTraitInfo === "function"
+        ? getRosterDevTraitInfo(entry, slotKey)
+        : null;
+      ctx.fillStyle = "#fde68a";
+      ctx.font = "bold 9px Arial";
+      ctx.fillText(slotLabelByKey[slotKey], nameX, rowY + 24);
+      if (traitInfo) {
+        drawDevTraitBadge(ctx, nameX, rowY + 36, traitInfo, 108);
+      }
+
+      const badgeCy = rowY + rowH / 2 + 4;
+      drawOvrBadge(ctx, offOvrCx, badgeCy, "OFF", offOvr);
+      drawOvrBadge(ctx, defOvrCx, badgeCy, "DEF", defOvr);
+      if (traitInfo) {
+        drawDevTraitPill(ctx, devCx, badgeCy, traitInfo, { compact: true });
+      }
+
+      const barOpts = { roster: true, barH: 24 };
+      drawAttributeRatingBars(ctx, offStatsX, rowY + statBarY, statsColW, ratings, {
+        ...barOpts,
+        keyOrder: getAttributeKeysForSide(slotKey, "off")
+      });
+      drawAttributeRatingBars(ctx, defStatsX, rowY + statBarY, statsColW, defRatings, {
+        ...barOpts,
+        keyOrder: DEF_ATTRIBUTE_KEYS,
+        labels: DEF_ATTRIBUTE_SHORT_LABELS
+      });
     }
   }
 
@@ -2834,6 +3247,17 @@ function drawTeamSelectOverlay() {
   ctx.textAlign = "center";
   ctx.fillText("Main menu", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
 
+  if (L.devGuide) {
+    ctx.fillStyle = "#4c1d95";
+    ctx.fillRect(L.devGuide.x, L.devGuide.y, L.devGuide.w, L.devGuide.h);
+    ctx.strokeStyle = "#c4b5fd";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(L.devGuide.x, L.devGuide.y, L.devGuide.w, L.devGuide.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 13px Arial";
+    ctx.fillText("Dev traits guide", L.devGuide.x + L.devGuide.w / 2, L.devGuide.y + L.devGuide.h / 2 + 5);
+  }
+
   if (!canStart) {
     ctx.fillStyle = "#9ca3af";
     ctx.font = "14px Arial";
@@ -2852,7 +3276,6 @@ function drawOpponentRevealOverlay() {
   const Tu = TEAMS[u];
   const Tc = TEAMS[c];
   const L = getOpponentRevealLayout();
-  const rosterLines = (T) => getFullTeamRosterTextLine(T);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
@@ -2862,7 +3285,7 @@ function drawOpponentRevealOverlay() {
   ctx.fillStyle = "#d1d5db";
   const sessionSub = playSessionUsesCoinToss()
     ? `Next: coin toss · ${getDifficultyLabel(game.gameSettings.difficulty)} difficulty`
-    : `${getPlaySessionLabel(game.playSessionKind)} — no kickoffs · ${getDifficultyLabel(game.gameSettings.difficulty)}`;
+    : `${getPlaySessionLabel(game.playSessionKind)} — timed session · ${getDifficultyLabel(game.gameSettings.difficulty)}`;
   ctx.fillText(sessionSub, canvas.width / 2, 132);
 
   const boxW = 400;
@@ -2884,16 +3307,30 @@ function drawOpponentRevealOverlay() {
   ctx.fillText("YOU", boxLeft + 16, yYou + 22);
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
-  ctx.fillText(Tu.name, boxLeft + 16, yYou + 50);
-  ctx.font = "11px Arial";
+  ctx.fillText(Tu.name, boxLeft + 16, yYou + 46);
+  ctx.font = "bold 11px Arial";
+  ctx.fillStyle = getOvrTierColor(getTeamAverageOffOvr(Tu));
+  ctx.fillText(`OFF ${getTeamAverageOffOvr(Tu)}`, boxLeft + 16, yYou + 64);
+  ctx.fillStyle = getOvrTierColor(getTeamAverageDefOvr(Tu));
+  ctx.fillText(`DEF ${getTeamAverageDefOvr(Tu)}`, boxLeft + 88, yYou + 64);
+  ctx.font = "9px Arial";
   ctx.fillStyle = "#d1d5db";
   {
-    const line = rosterLines(Tu);
+    const profiles = getTeamRosterProfiles(Tu);
+    const ovrLine = profiles.map((p) => `${p.name.split(" ")[0]} ${p.offOvr}/${p.defOvr}`).join(" · ");
+    let t = ovrLine;
     const maxR = 368;
-    let t = line;
-    while (t.length > 1 && ctx.measureText(t + "…").width > maxR) t = t.slice(0, -1);
-    const out = t.length < line.length ? `${t}…` : t;
-    ctx.fillText(out, boxLeft + 16, yYou + 76);
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxR) t = t.slice(0, -1);
+    ctx.fillText(t.length < ovrLine.length ? `${t}…` : t, boxLeft + 16, yYou + 78);
+  }
+  if (typeof formatRosterDevTraitLine === "function") {
+    const devLine = formatRosterDevTraitLine(Tu);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 9px Arial";
+    let t = devLine;
+    const maxR = 368;
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxR) t = t.slice(0, -1);
+    ctx.fillText(t.length < devLine.length ? `${t}…` : t, boxLeft + 16, yYou + 94);
   }
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.95)";
@@ -2907,16 +3344,30 @@ function drawOpponentRevealOverlay() {
   ctx.fillText("CPU", boxLeft + 16, yCpu + 22);
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 22px Arial";
-  ctx.fillText(Tc.name, boxLeft + 16, yCpu + 50);
-  ctx.font = "11px Arial";
+  ctx.fillText(Tc.name, boxLeft + 16, yCpu + 46);
+  ctx.font = "bold 11px Arial";
+  ctx.fillStyle = getOvrTierColor(getTeamAverageOffOvr(Tc));
+  ctx.fillText(`OFF ${getTeamAverageOffOvr(Tc)}`, boxLeft + 16, yCpu + 64);
+  ctx.fillStyle = getOvrTierColor(getTeamAverageDefOvr(Tc));
+  ctx.fillText(`DEF ${getTeamAverageDefOvr(Tc)}`, boxLeft + 88, yCpu + 64);
+  ctx.font = "9px Arial";
   ctx.fillStyle = "#d1d5db";
   {
-    const line = rosterLines(Tc);
+    const profiles = getTeamRosterProfiles(Tc);
+    const ovrLine = profiles.map((p) => `${p.name.split(" ")[0]} ${p.offOvr}/${p.defOvr}`).join(" · ");
+    let t = ovrLine;
     const maxR = 368;
-    let t = line;
-    while (t.length > 1 && ctx.measureText(t + "…").width > maxR) t = t.slice(0, -1);
-    const out = t.length < line.length ? `${t}…` : t;
-    ctx.fillText(out, boxLeft + 16, yCpu + 76);
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxR) t = t.slice(0, -1);
+    ctx.fillText(t.length < ovrLine.length ? `${t}…` : t, boxLeft + 16, yCpu + 78);
+  }
+  if (typeof formatRosterDevTraitLine === "function") {
+    const devLine = formatRosterDevTraitLine(Tc);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 9px Arial";
+    let t = devLine;
+    const maxR = 368;
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxR) t = t.slice(0, -1);
+    ctx.fillText(t.length < devLine.length ? `${t}…` : t, boxLeft + 16, yCpu + 94);
   }
 
   ctx.textAlign = "center";
@@ -3336,80 +3787,171 @@ function drawPauseMenu() {
   ctx.fillRect(home.x, home.y, home.w, home.h);
   ctx.strokeRect(home.x, home.y, home.w, home.h);
   ctx.fillStyle = COLORS.white;
-  ctx.fillText("Main menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
+  ctx.fillText(game.franchiseActive ? "Franchise hub" : "Main menu", home.x + home.w / 2, home.y + home.h / 2 + 8);
 }
 
 function drawSettingsMenu() {
   drawMenuBackground();
-  ctx.fillStyle = "rgba(17, 24, 39, 0.82)";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const L = getSettingsMenuLayout();
-  const q = game.gameSettings.quarterLengthMin;
+  const s = game.gameSettings;
+  const p = L.panel;
+  const lab = L.labels;
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.96)";
+  ctx.fillRect(p.x, p.y, p.w, p.h);
+  ctx.strokeStyle = "#475569";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(p.x, p.y, p.w, p.h);
 
   ctx.textAlign = "center";
   ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 34px Arial";
-  ctx.fillText("Settings", canvas.width / 2, 90);
-  ctx.font = "16px Arial";
-  ctx.fillStyle = "#d1d5db";
-  ctx.fillText("Applies to new games", canvas.width / 2, 124);
-  ctx.font = "bold 18px Arial";
-  ctx.fillStyle = "#fde68a";
-  ctx.fillText("Minutes per quarter", canvas.width / 2, 178);
+  ctx.font = "bold 30px Arial";
+  ctx.fillText("Settings", p.x + p.w / 2, p.y + 34);
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText("Saved when you tap Save & back", p.x + p.w / 2, p.y + 54);
 
-  ctx.fillStyle = "#374151";
-  ctx.fillRect(L.minus.x, L.minus.y, L.minus.w, L.minus.h);
-  ctx.fillRect(L.plus.x, L.plus.y, L.plus.w, L.plus.h);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(L.minus.x, L.minus.y, L.minus.w, L.minus.h);
-  ctx.strokeRect(L.plus.x, L.plus.y, L.plus.w, L.plus.h);
-  ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 32px Arial";
-  ctx.fillText("−", L.minus.x + L.minus.w / 2, L.minus.y + L.minus.h / 2 + 10);
-  ctx.fillText("+", L.plus.x + L.plus.w / 2, L.plus.y + L.plus.h / 2 + 10);
-  ctx.font = "bold 48px Arial";
-  ctx.fillText(String(q), canvas.width / 2, L.minus.y + 40);
+  const drawSection = (title, y) => {
+    ctx.textAlign = "left";
+    ctx.font = "bold 11px Arial";
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(title, p.x + 24, y);
+    ctx.strokeStyle = "rgba(71, 85, 105, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(p.x + 24, y + 8);
+    ctx.lineTo(p.x + p.w - 24, y + 8);
+    ctx.stroke();
+  };
 
-  ctx.font = "bold 18px Arial";
-  ctx.fillStyle = "#fde68a";
-  ctx.fillText("Difficulty", canvas.width / 2, 300);
-  const diff = game.gameSettings.difficulty || "normal";
-  const diffSub = DIFFICULTY_PRESETS[diff] ? DIFFICULTY_PRESETS[diff].sub : "";
-  for (const key of DIFFICULTY_ORDER) {
-    const rect = L["diff" + key.charAt(0).toUpperCase() + key.slice(1)];
-    const active = diff === key;
-    const preset = DIFFICULTY_PRESETS[key];
-    ctx.fillStyle = active ? "#1d4ed8" : "#374151";
+  const drawRowLabel = (text, y) => {
+    ctx.textAlign = "left";
+    ctx.font = "15px Arial";
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillText(text, p.x + 28, y);
+  };
+
+  const drawStepper = (minusRect, plusRect, valueText, valuePt) => {
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(minusRect.x, minusRect.y, minusRect.w, minusRect.h);
+    ctx.fillRect(plusRect.x, plusRect.y, plusRect.w, plusRect.h);
+    ctx.strokeStyle = "#64748b";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(minusRect.x, minusRect.y, minusRect.w, minusRect.h);
+    ctx.strokeRect(plusRect.x, plusRect.y, plusRect.w, plusRect.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 20px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("−", minusRect.x + minusRect.w / 2, minusRect.y + 22);
+    ctx.fillText("+", plusRect.x + plusRect.w / 2, plusRect.y + 22);
+    ctx.font = "bold 17px Arial";
+    ctx.fillStyle = "#fde68a";
+    ctx.fillText(valueText, valuePt.x, valuePt.y);
+  };
+
+  const drawSegment = (rect, label, active) => {
+    ctx.fillStyle = active ? "#1d4ed8" : "#334155";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    ctx.strokeStyle = active ? "#facc15" : COLORS.white;
-    ctx.lineWidth = active ? 3 : 2;
+    ctx.strokeStyle = active ? "#facc15" : "#64748b";
+    ctx.lineWidth = active ? 2 : 1;
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
     ctx.fillStyle = COLORS.white;
-    ctx.font = "bold 15px Arial";
-    ctx.fillText(preset.label, rect.x + rect.w / 2, rect.y + 18);
-  }
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "#9ca3af";
-  ctx.fillText(diffSub, canvas.width / 2, 392);
-  ctx.fillText("Range: 1–12 min · Halftime after Q2 switches sides", canvas.width / 2, 412);
+    ctx.font = active ? "bold 13px Arial" : "13px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + 20);
+  };
 
-  ctx.fillStyle = "#16a34a";
-  ctx.fillRect(L.done.x, L.done.y, L.done.w, L.done.h);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(L.done.x, L.done.y, L.done.w, L.done.h);
-  ctx.fillStyle = COLORS.white;
-  ctx.font = "bold 20px Arial";
-  ctx.fillText("Save & back", L.done.x + L.done.w / 2, L.done.y + L.done.h / 2 + 7);
+  drawSection("GAME", lab.sectionGameY);
+  drawRowLabel("Quarter length", lab.quarterY);
+  drawStepper(L.minusQ, L.plusQ, `${s.quarterLengthMin} min`, L.values.quarter);
+
+  drawRowLabel("Difficulty", lab.diffY);
+  drawSegment(L.diffEasy, "Easy", s.difficulty === "easy");
+  drawSegment(L.diffNormal, "Normal", s.difficulty === "normal");
+  drawSegment(L.diffHard, "Hard", s.difficulty === "hard");
+
+  drawRowLabel("Overtime", lab.otY);
+  drawSegment(L.otOff, "Off", s.overtimeMode === "off");
+  drawSegment(L.otFull, "Full OT", s.overtimeMode === "full");
+  drawSegment(L.otSudden, "Sudden", s.overtimeMode === "suddenDeath");
+
+  drawRowLabel("Drive summary", lab.summaryY);
+  drawSegment(L.summaryOn, "On", s.showDriveSummary !== false);
+  drawSegment(L.summaryOff, "Off", s.showDriveSummary === false);
+
+  drawSection("AUDIO", lab.sectionAudioY);
+  drawRowLabel("Music", lab.musicY);
+  drawStepper(L.minusMusic, L.plusMusic, `${s.musicVolume}%`, L.values.music);
+  drawRowLabel("Sound effects", lab.sfxY);
+  drawStepper(L.minusSfx, L.plusSfx, `${s.sfxVolume}%`, L.values.sfx);
+
+  drawSection("MOBILE", lab.sectionMobileY);
+  drawRowLabel("Passing", lab.passY);
+  drawSegment(L.passTap, "Tap to throw", s.mobilePassAim === "tap");
+  drawSegment(L.passHold, "Hold to aim", s.mobilePassAim === "hold");
 
   ctx.fillStyle = "#4b5563";
   ctx.fillRect(L.back.x, L.back.y, L.back.w, L.back.h);
-  ctx.strokeStyle = COLORS.white;
+  ctx.strokeStyle = "#94a3b8";
+  ctx.lineWidth = 1;
   ctx.strokeRect(L.back.x, L.back.y, L.back.w, L.back.h);
-  ctx.font = "bold 14px Arial";
-  ctx.fillText("Main menu", L.back.x + L.back.w / 2, L.back.y + L.back.h / 2 + 5);
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "13px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Cancel", L.back.x + L.back.w / 2, L.back.y + 22);
+
+  ctx.fillStyle = "#16a34a";
+  ctx.fillRect(L.done.x, L.done.y, L.done.w, L.done.h);
+  ctx.strokeStyle = "#bbf7d0";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.done.x, L.done.y, L.done.w, L.done.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 17px Arial";
+  ctx.fillText("Save & back", L.done.x + L.done.w / 2, L.done.y + 26);
+}
+
+function drawDriveSummaryOverlay() {
+  const lines = typeof getDriveSummaryLines === "function" ? getDriveSummaryLines() : [];
+  const boxW = 620;
+  const boxH = 72 + lines.length * 28;
+  const boxX = (canvas.width - boxW) / 2;
+  const boxY = Math.round((canvas.height - boxH) / 2) - 6;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(17, 24, 39, 0.94)";
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = "#93c5fd";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.textAlign = "center";
+  ctx.font = "bold 28px Arial";
+  ctx.fillStyle = "#93c5fd";
+  ctx.fillText("DRIVE SUMMARY", canvas.width / 2, boxY + 34);
+
+  ctx.textAlign = "left";
+  let y = boxY + 58;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    ctx.font = "bold 13px Arial";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText(line.label, boxX + 24, y);
+    ctx.font = "14px Arial";
+    ctx.fillStyle = line.color;
+    ctx.fillText(line.value, boxX + 190, y);
+    y += 28;
+  }
+
+  ctx.textAlign = "center";
+  ctx.font = "15px Arial";
+  ctx.fillStyle = COLORS.white;
+  const hint = game.touchControlsEnabled ? "Tap to continue" : "Press Enter to continue";
+  ctx.fillText(hint, canvas.width / 2, boxY + boxH - 14);
 }
 
 function drawStatsCategoryPanel(sideKey, category, x, y, w) {
@@ -3532,9 +4074,13 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
   const midY = (dTop + dBot) / 2;
   const refSize = Math.min(dW, dH);
 
-  // LOS ~40% from the left — backfield auto-scales to fit deepest player.
-  const losX = dLeft + Math.round(dW * 0.40);
   const offenseDir = typeof getOffenseDirection === "function" ? getOffenseDirection() : 1;
+  let losX = dLeft + Math.round(dW * 0.34);
+  let diagramLayout = null;
+  if (typeof createPlayDiagramLayout === "function") {
+    diagramLayout = createPlayDiagramLayout(play, dLeft, dTop, dW, dH);
+    losX = diagramLayout.losX;
+  }
   // Flip around the LOS so every route/formation reads toward the active end zone.
   const diagramX = (x) => (offenseDir > 0 ? x : 2 * losX - x);
 
@@ -3565,13 +4111,9 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const QB    = "#93c5fd";
-  const HORSE = "#f97316";
-  const PETE  = "#c8a97e";
-  const READ  = "rgba(255,255,255,0.5)";
-  const d1X = losX + Math.round(dW * 0.20);
-  const cornerR = Math.max(7, refSize * 0.07);
-  const routeW = 2;
+  const cornerR = Math.max(5, refSize * 0.055);
+  const routeW = Math.max(2.5, refSize * 0.026);
+  const arrowSize = Math.max(5, refSize * 0.048);
 
   function px(x) {
     return diagramX(x);
@@ -3589,7 +4131,7 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
     ctx.stroke();
   }
 
-  function drawArrowHead(x, y, angle, color, size = 5) {
+  function drawArrowHead(x, y, angle, color, size = arrowSize) {
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -3597,6 +4139,19 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
     ctx.lineTo(x - size * Math.cos(angle + 0.42), y - size * Math.sin(angle + 0.42));
     ctx.closePath();
     ctx.fill();
+  }
+
+  /** Perpendicular bar at the end of a block path (playbook block symbol). */
+  function drawBlockCap(x, y, angle, color, size = arrowSize * 1.15) {
+    const perp = angle + Math.PI / 2;
+    const half = size * 0.55;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, routeW + 0.5);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(perp) * half, y + Math.sin(perp) * half);
+    ctx.lineTo(x - Math.cos(perp) * half, y - Math.sin(perp) * half);
+    ctx.stroke();
   }
 
   /** Multi-segment route with rounded bends and an arrowhead at the end. */
@@ -3638,10 +4193,15 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    if (opts.noArrow) return;
     const last = pts[pts.length - 1];
     const prev = pts[pts.length - 2];
-    drawArrowHead(last.x, last.y, Math.atan2(last.y - prev.y, last.x - prev.x), color);
+    const endAngle = Math.atan2(last.y - prev.y, last.x - prev.x);
+    if (opts.block) {
+      drawBlockCap(last.x, last.y, endAngle, color);
+      return;
+    }
+    if (opts.noArrow) return;
+    drawArrowHead(last.x, last.y, endAngle, color);
   }
 
   function routeBezier(sx, sy, cpx, cpy, ex, ey, color, opts = {}) {
@@ -3665,142 +4225,33 @@ function drawPlayDiagram(play, bx, by, bw, bh) {
     routeThrough([{ x: sx, y: sy }, { x: ex, y: ey }], color, opts);
   }
 
-  const formationSpots = getFormationDiagramSpots(play, losX, dLeft, dTop, dW, dH);
-  function pos(id) {
-    const s = formationSpots.find((sp) => sp.id === id);
-    return s
-      ? { x: s.diagX, y: s.diagY, color: s.style.color, r: s.style.r }
-      : { x: losX, y: midY, color: QB, r: 4 };
-  }
+  const formationSpots = diagramLayout
+    ? diagramLayout.diagramSpots
+    : getFormationDiagramSpots(play, losX, dLeft, dTop, dW, dH);
 
-  // Routes first, then player dots on top.
-  if (play === "sweepRight" || play === "sweepLeft") {
-    const horse = pos("allyHorse");
-    const p5 = pos("offenseP5");
-    const rb = pos("offenseP4");
-    const qb = pos("player1");
-    const up = play === "sweepLeft";
-    routeLine(horse.x, horse.y, horse.x + dW * 0.18, horse.y, HORSE, { corner: 4 });
-    routeLine(p5.x, p5.y, p5.x + dW * 0.18, p5.y, PETE, { corner: 4 });
-    routeBezier(
-      rb.x, rb.y,
-      dLeft + dW * 0.33, up ? dTop + 6 : dBot - 6,
-      qb.x - 2, qb.y + (up ? -4 : 4),
-      HORSE
-    );
-  } else if (play === "passRight" || play === "passLeft") {
-    const qb = pos("player1");
-    const center = pos("offenseP5");
-    const outside = pos("allyHorse");
-    const slot = pos("lilTunnelPete");
-    const inside = pos("offenseP4");
-    const stemX = dLeft + Math.round(dW * 0.57);
-    const cornerX = dLeft + Math.round(dW * 0.75);
-    const postX = dRight - 8;
-    const postY = dTop + Math.round(dH * (play === "passLeft" ? 0.58 : 0.42));
-    const cornerY = play === "passLeft" ? dTop + 4 : dBot - 4;
-    routeLine(center.x, center.y, qb.x, qb.y, PETE, { corner: 4 });
-    routeThrough([
-      { x: outside.x, y: outside.y },
-      { x: stemX, y: outside.y },
-      { x: cornerX, y: cornerY },
-      { x: postX, y: postY }
-    ], HORSE);
-    routeLine(slot.x, slot.y, d1X, slot.y, PETE);
-    routeLine(inside.x, inside.y, d1X - dW * 0.06, inside.y, HORSE);
-    routeLine(qb.x, qb.y, postX, postY, READ, { dashed: true, noArrow: true, width: 1.5 });
-  } else if (play === "barnPlay") {
-    const qb = pos("player1");
-    const horse = pos("allyHorse");
-    const pete = pos("lilTunnelPete");
-    const horseStemX = dLeft + Math.round(dW * 0.72);
-    const peteStemX = dLeft + Math.round(dW * 0.52);
-    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
-    routeThrough([
-      { x: horse.x, y: horse.y },
-      { x: horseStemX, y: horse.y },
-      { x: dRight - 8, y: midY + Math.round(dH * 0.03) }
-    ], HORSE);
-    routeThrough([
-      { x: pete.x, y: pete.y },
-      { x: peteStemX, y: pete.y },
-      { x: peteStemX, y: dTop + Math.round(dH * 0.18) }
-    ], PETE);
-    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
-  } else if (play === "scrambledEggs") {
-    const qb = pos("player1");
-    const horse = pos("allyHorse");
-    const pete = pos("lilTunnelPete");
-    const zStemX = dLeft + Math.round(dW * 0.92);
-    const xStemX = dLeft + Math.round(dW * 0.67);
-    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
-    routeThrough([
-      { x: pete.x, y: pete.y },
-      { x: zStemX, y: pete.y },
-      { x: dRight - 10, y: dBot - 16 }
-    ], PETE);
-    routeThrough([
-      { x: horse.x, y: horse.y },
-      { x: xStemX, y: horse.y },
-      { x: dLeft + Math.round(dW * 0.60), y: horse.y }
-    ], HORSE);
-    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
-  } else if (play === "barnDoorBoot") {
-    const qb = pos("player1");
-    const pete = pos("lilTunnelPete");
-    const horse = pos("allyHorse");
-    const deepX = losX - Math.round(dW * 0.38);
-    routeLine(qb.x, qb.y, deepX, qb.y, QB, { corner: 4 });
-    routeThrough([
-      { x: deepX, y: qb.y },
-      { x: losX - dW * 0.02, y: qb.y - dH * 0.18 },
-      { x: losX + dW * 0.05, y: qb.y - dH * 0.10 }
-    ], QB, { noArrow: true });
-    routeLine(pete.x, pete.y, dRight - 8, dBot - 8, PETE);
-    routeBezier(horse.x, horse.y, d1X + 6, midY + 18, d1X + 10, midY + 12, HORSE);
-    routeLine(qb.x, qb.y, dRight - 12, qb.y, READ, { dashed: true, noArrow: true, width: 1.5 });
-  } else if (play === "pigPenScreen") {
-    const qb = pos("player1");
-    const wr = pos("lilTunnelPete");
-    const rb = pos("allyHorse");
-    const catchX = losX - Math.round(dW * 0.24);
-    const catchY = rb.y;
-    routeBezier(qb.x, qb.y, (qb.x + catchX) / 2, (qb.y + catchY) / 2, catchX, catchY, QB);
-    routeBezier(
-      wr.x, wr.y,
-      wr.x - dW * 0.22, wr.y - dH * 0.06,
-      wr.x - dW * 0.38, dBot - dH * 0.18,
-      PETE
-    );
-    routeLine(rb.x, rb.y, catchX, catchY, HORSE);
-    routeLine(qb.x, qb.y, catchX, catchY, READ, { dashed: true, noArrow: true, width: 1.5 });
-  } else if (play === "cornfieldCross") {
-    const qb = pos("player1");
-    const horse = pos("allyHorse");
-    const pete = pos("lilTunnelPete");
-    routeLine(qb.x, qb.y, dLeft + 2, qb.y, QB, { corner: 4 });
-    routeBezier(horse.x, horse.y, d1X, horse.y + 12, dRight - 8, midY + 10, HORSE);
-    routeBezier(pete.x, pete.y, d1X, pete.y - 12, dRight - 8, midY - 10, PETE);
-  } else if (play === "diveRight" || play === "diveLeft") {
-    const qb = pos("player1");
-    const pete = pos("lilTunnelPete");
-    const horse = pos("allyHorse");
-    const up = play === "diveLeft";
-    const handoffX = losX - 10;
-    const handoffY = midY + (up ? -1 : 1) * Math.round(dH * 0.18);
-    routeLine(qb.x, qb.y, handoffX, handoffY, QB, { corner: 4 });
-    routeBezier(
-      pete.x, pete.y,
-      losX - dW * 0.14, up ? dTop + 2 : dBot - 2,
-      handoffX, handoffY,
-      PETE
-    );
-    routeBezier(
-      horse.x, horse.y,
-      losX - dW * 0.26, midY + (up ? -1 : 1) * Math.round(dH * 0.15),
-      handoffX, handoffY,
-      HORSE
-    );
+  if (diagramLayout) {
+    for (const route of diagramLayout.diagramRoutes) {
+      if (route.kind === "bezier") {
+        routeBezier(
+          route.from.x,
+          route.from.y,
+          route.cp.x,
+          route.cp.y,
+          route.to.x,
+          route.to.y,
+          route.color,
+          { width: routeW }
+        );
+      } else if (route.points && route.points.length >= 2) {
+        routeThrough(route.points, route.color, {
+          corner: route.corner ?? cornerR,
+          width: routeW,
+          dashed: !!route.dashed || !!route.block,
+          block: !!route.block,
+          noArrow: !!route.noArrow,
+        });
+      }
+    }
   }
 
   for (const s of formationSpots) {
@@ -3896,7 +4347,7 @@ function drawDefenseSelectOverlay() {
   ctx.font = "bold 24px Arial";
   const cur = game.defenseModeDefenseFilter;
   ctx.font = "bold 12px Arial";
-  const filterLabels = { all: "All", run: "Run only", pass: "Pass only" };
+  const filterLabels = { all: "All", run: "Man", pass: "Zone" };
   for (const key of ["all", "run", "pass"]) {
     const rect = filt[key];
     const active =
@@ -3918,19 +4369,20 @@ function drawDefenseSelectOverlay() {
   ctx.fillText(game.turnoverSeriesActive ? "Turnover! Select defense" : "Select defense", canvas.width / 2, P.y + 68);
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
-  ctx.fillText(`Down ${game.playModeDown} of ${game.playModeMaxDowns}`, canvas.width / 2, P.y + 92);
+  ctx.fillText(
+    typeof formatPlayModeDownDistance === "function"
+      ? formatPlayModeDownDistance()
+      : `Down ${game.playModeDown} of ${game.playModeMaxDowns}`,
+    canvas.width / 2,
+    P.y + 92
+  );
   ctx.fillText(
     game.turnoverSeriesActive
       ? "Pig's offense takes over here. Choose a defense and offense look below."
-      : "Choose defense shell up top and toggle the offense play below.",
+      : "Choose man or zone coverage up top and toggle the offense play below.",
     canvas.width / 2,
     P.y + 112
   );
-
-  const labels = {
-    A: { title: "3-2", sub: "Run shell (3 near LOS, 2 deep)" },
-    B: { title: "2-3", sub: "Pass shell (2 near LOS, 3 deep)" }
-  };
 
   for (const key of getFilteredDefenseOptionOrder()) {
     const rect = options[key];
@@ -3942,10 +4394,10 @@ function drawDefenseSelectOverlay() {
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
     ctx.fillStyle = COLORS.white;
     ctx.font = "bold 18px Arial";
-    ctx.fillText(labels[key].title, rect.x + rect.w / 2, rect.y + 26);
+    ctx.fillText(getDefenseCoverageTitle(key), rect.x + rect.w / 2, rect.y + 26);
     ctx.font = "12px Arial";
     ctx.fillStyle = "#d1d5db";
-    ctx.fillText(labels[key].sub, rect.x + rect.w / 2, rect.y + rect.h - 16);
+    ctx.fillText(getDefenseCoverageSubtitle(key), rect.x + rect.w / 2, rect.y + rect.h - 16);
     drawDefensePreviewDiagram(key, rect.x, rect.y, rect.w, rect.h);
   }
 
@@ -4263,7 +4715,9 @@ function drawPlaySelectOverlay() {
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
   ctx.fillText(
-    "Down " + game.playModeDown + " of " + game.playModeMaxDowns,
+    typeof formatPlayModeDownDistance === "function"
+      ? formatPlayModeDownDistance()
+      : `Down ${game.playModeDown} of ${game.playModeMaxDowns}`,
     canvas.width / 2,
     P.y + PLAY_SELECT_DOWN_Y
   );
@@ -4399,7 +4853,7 @@ function drawPlaySelectOverlay() {
   ctx.strokeRect(dt.x, dt.y, dt.w, dt.h);
   ctx.fillStyle = COLORS.white;
   ctx.font = "bold 15px Arial";
-  const defLabel = game.selectedDefense === "B" ? "2-3" : "3-2";
+  const defLabel = getDefenseCoverageTitle(game.selectedDefense);
   ctx.fillText(defLabel, dt.x + dt.w / 2, dt.y + dt.h / 2 + 5);
 
 }
@@ -4466,6 +4920,23 @@ function drawMobileTouchControls() {
     ctx.restore();
   }
 
+  if (canShowJukeButton()) {
+    const juke = getMobileJukeButtonRect();
+    const carrier = getUserOffenseBallCarrier();
+    const onCooldown = carrier && (carrier.jukeCooldownMs || 0) > 0;
+    ctx.save();
+    ctx.fillStyle = onCooldown ? "rgba(55, 65, 81, 0.88)" : "rgba(17, 24, 39, 0.82)";
+    ctx.fillRect(juke.x, juke.y, juke.w, juke.h);
+    ctx.strokeStyle = onCooldown ? "#94a3b8" : "#fbbf24";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(juke.x, juke.y, juke.w, juke.h);
+    ctx.fillStyle = onCooldown ? "#94a3b8" : COLORS.white;
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Juke", juke.x + juke.w / 2, juke.y + juke.h / 2 + 6);
+    ctx.restore();
+  }
+
   if (game.state === "gameOver") {
     const restart = getMobileRestartButtonRect();
     ctx.save();
@@ -4482,10 +4953,22 @@ function drawMobileTouchControls() {
   }
 }
 
-/** Full field + players + scoreboard (fixed field position — even margins to canvas like the original). */
+function drawFieldCentered() {
+  const scrollX = typeof getFieldCameraScrollX === "function" ? getFieldCameraScrollX() : 0;
+  ctx.save();
+  ctx.translate(-scrollX, 0);
+  drawField();
+  ctx.restore();
+}
+
+/** Full field + players + scoreboard; pans on wider fields during play. */
 function drawFieldAndPlayAction() {
+  const scrollX = typeof getFieldCameraScrollX === "function" ? getFieldCameraScrollX() : 0;
+  ctx.save();
+  ctx.translate(-scrollX, 0);
   drawField();
   drawPlayfieldActionLayer({ replay: false });
+  ctx.restore();
   drawScoreboard();
 }
 
@@ -4498,6 +4981,22 @@ function drawPlayfieldActionLayer(options = {}) {
       lineX += Math.sin(Date.now() / 38) * (12 * game.fieldCelebrationTimer) / 2800;
     }
     ctx.save();
+    if (game.playModeFirstDownLineX != null && game.playModeYardsToGo > 0) {
+      const fdX = game.playModeFirstDownLineX;
+      const showFirstDown =
+        Math.abs(fdX - lineX) > 6 &&
+        fdX > FIELD.x + FIELD.endZoneWidth &&
+        fdX < FIELD.x + FIELD.width - FIELD.endZoneWidth;
+      if (showFirstDown) {
+        ctx.strokeStyle = "#fb923c";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath();
+        ctx.moveTo(fdX, FIELD.y);
+        ctx.lineTo(fdX, FIELD.y + FIELD.height);
+        ctx.stroke();
+      }
+    }
     ctx.strokeStyle = "#facc15";
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 5]);
@@ -4531,12 +5030,18 @@ function drawPlayfieldActionLayer(options = {}) {
       (game.playModeCurrentPlay === "passRight" ||
         game.playModeCurrentPlay === "passLeft" ||
         game.playModeCurrentPlay === "barnPlay" ||
-        game.playModeCurrentPlay === "scrambledEggs") &&
+        game.playModeCurrentPlay === "scrambledEggs" ||
+        game.playModeCurrentPlay === "hayBaleHook" ||
+        game.playModeCurrentPlay === "cornfieldCross" ||
+        game.playModeCurrentPlay === "barnDoorBoot" ||
+        game.playModeCurrentPlay === "siloSlant" ||
+        game.playModeCurrentPlay === "pasturePop" ||
+        game.playModeCurrentPlay === "fencePost") &&
       ball.carrier === player1 &&
       !ball.inFlight &&
-      game.passPlayDropbackDone &&
-      game.passPlayCanThrow);
-  if (showPassAim && !game.touchControlsEnabled) {
+      typeof canThrowOnCurrentPassPlay === "function" &&
+      canThrowOnCurrentPassPlay());
+  if (showPassAim && (!game.touchControlsEnabled || getMobilePassAimMode() === "hold")) {
     const mx = game.mouseX;
     const my = game.mouseY;
     ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
@@ -4583,6 +5088,7 @@ function drawInstantReplayScene() {
   const idx = getReplayFrameIndex();
   applyReplaySnapshot(frames[idx]);
 
+  const scrollX = typeof getFieldCameraScrollX === "function" ? getFieldCameraScrollX() : 0;
   ctx.save();
   const cx = canvas.width * 0.5;
   const cy = FIELD.y + FIELD.height * 0.48;
@@ -4590,6 +5096,7 @@ function drawInstantReplayScene() {
   ctx.translate(cx, cy);
   ctx.scale(z, z);
   ctx.translate(-cx, -cy);
+  ctx.translate(-scrollX, 0);
 
   drawField();
   drawPlayfieldActionLayer({ replay: true });
@@ -4668,25 +5175,40 @@ function render() {
     return;
   }
 
-  if (game.state === "playMomentSelect") {
-    drawPlayMomentSelect();
+  if (game.state === "playDevTraitsGuide") {
+    drawDevTraitsGuide();
+    return;
+  }
+
+  if (game.state === "franchiseMain") {
+    drawFranchiseMain();
+    return;
+  }
+
+  if (game.state === "franchiseHub") {
+    drawFranchiseHub();
+    return;
+  }
+
+  if (game.state === "franchisePlaySelect") {
+    drawFranchisePlaySelect();
     return;
   }
 
   if (game.state === "playTeamSelect") {
-    drawField();
+    drawFieldCentered();
     drawTeamSelectOverlay();
     return;
   }
 
   if (game.state === "playOpponentReveal") {
-    drawField();
+    drawFieldCentered();
     drawOpponentRevealOverlay();
     return;
   }
 
   if (game.state === "playCoinToss") {
-    drawField();
+    drawFieldCentered();
     drawCoinTossOverlay();
     return;
   }
@@ -4747,6 +5269,12 @@ function render() {
 
   if (game.state === "safetyPopup") {
     drawSafetyPopup();
+  } else if (game.state === "sessionPossessionRecap") {
+    drawFieldAndPlayAction();
+    drawSessionPossessionRecap();
+  } else if (game.state === "driveSummary") {
+    drawFieldAndPlayAction();
+    drawDriveSummaryOverlay();
   } else if (game.state === "postTouchdownChoice") {
     drawPostTouchdownChoiceOverlay();
   } else if (game.state === "touchdownPopup") {
@@ -4793,7 +5321,9 @@ function render() {
       drawCenterMessage(downedTitle, downPrompt, detail, null, titleStyle, showFarmer);
     }
   } else if (game.state === "gameOver") {
-    if (game.mode === "play" && !game.winner) {
+    if (game.franchiseActive) {
+      drawCenterMessage("Game Over", "Press R to return to franchise hub");
+    } else if (game.mode === "play" && !game.winner) {
       const detail = game.playUserTeamId
         ? { text: `${TEAMS[game.playCpuTeamId].name} scored!`, color: "#fca5a5" }
         : null;

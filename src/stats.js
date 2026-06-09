@@ -79,8 +79,9 @@ function markRunAttemptStarted() {
 }
 
 function getPassCompPct(stats) {
-  if (!stats || !stats.passing.att) return 0;
-  return (stats.passing.comp / stats.passing.att) * 100;
+  const passing = stats && (stats.passing || stats);
+  if (!passing || !passing.att) return 0;
+  return (passing.comp / passing.att) * 100;
 }
 
 function recordTouchdownStats(scorer, playKey) {
@@ -197,4 +198,55 @@ function getReceiverDisplayName(sideKey, targetKey) {
     if (targetKey === "p4" && roster.p4) return roster.p4.displayLabel;
   }
   return slot.label;
+}
+
+function shouldShowDriveSummaryOverlay() {
+  return (
+    game.gameSettings.showDriveSummary !== false &&
+    typeof playSessionTracksFullGameScore === "function" &&
+    playSessionTracksFullGameScore() &&
+    game.teamStats &&
+    game.teamScores &&
+    game.playUserTeamId &&
+    game.playCpuTeamId
+  );
+}
+
+function formatDriveSummaryStatLine(label, value) {
+  return { label, value, color: "#e5e7eb" };
+}
+
+function getDriveSummaryLines() {
+  const userName = TEAMS[game.playUserTeamId]?.name || "You";
+  const cpuName = TEAMS[game.playCpuTeamId]?.name || "CPU";
+  const userPts = game.teamScores[game.playUserTeamId] || 0;
+  const cpuPts = game.teamScores[game.playCpuTeamId] || 0;
+  const user = game.teamStats.user;
+  const cpu = game.teamStats.cpu;
+  const lines = [
+    formatDriveSummaryStatLine("Score", `${userName} ${userPts}  ·  ${cpuName} ${cpuPts}`)
+  ];
+
+  if (playSessionUsesGameClock && game.clockInitialized) {
+    const qLabel = game.clockQuarter >= 5 ? "OT" : `Q${game.clockQuarter}`;
+    lines.push(formatDriveSummaryStatLine("Clock", `${qLabel}  ${formatGameClockMs(game.clockMsRemaining)}`));
+  }
+
+  lines.push(formatDriveSummaryStatLine(
+    `${userName} passing`,
+    `${user.passing.comp}/${user.passing.att}, ${user.passing.yards} yds, ${user.passing.td} TD`
+  ));
+  lines.push(formatDriveSummaryStatLine(
+    `${cpuName} passing`,
+    `${cpu.passing.comp}/${cpu.passing.att}, ${cpu.passing.yards} yds, ${cpu.passing.td} TD`
+  ));
+  lines.push(formatDriveSummaryStatLine(
+    `${userName} rushing`,
+    `${user.rushing.att} att, ${user.rushing.yards} yds, ${user.rushing.td} TD`
+  ));
+  lines.push(formatDriveSummaryStatLine(
+    `${cpuName} rushing`,
+    `${cpu.rushing.att} att, ${cpu.rushing.yards} yds, ${cpu.rushing.td} TD`
+  ));
+  return lines;
 }

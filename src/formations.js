@@ -10,9 +10,8 @@ const FORMATION_Y_LANES = {
   bot: 0.78
 };
 
+/** Side length (yd) of the trips WR equilateral triangle. */
 const TRIPS_TRIANGLE_YARDS = 7;
-const PIG_PEN_FORMATION_WR_BACK_YD = 4;
-const PIG_PEN_FORMATION_RB_BACK_YD = 9;
 const DOUBLES_CROSS_WR_BACK_YD = 4;
 
 const OFFENSE_ENTITIES = {
@@ -32,9 +31,13 @@ const PLAY_FORMATION_MAP = {
   diveLeft: "iProTwoOLWide",
   barnPlay: "shotgunDoublesTwoOL",
   scrambledEggs: "shotgunDoublesTwoOL",
-  pigPenScreen: "pigPenTwoOL",
+  hayBaleHook: "shotgunDoublesTwoOL",
   cornfieldCross: "doublesCrossTwoOL",
-  barnDoorBoot: "iProTwoOLWide"
+  barnDoorBoot: "iProTwoOLWide",
+  siloSlant: "shotgunDoublesTwoOL",
+  pasturePop: "shotgunDoublesTwoOL",
+  fencePost: "shotgunTrips",
+  mudHoleDive: "iProTwoOLWide"
 };
 
 function resolveFormationY(lane, entity) {
@@ -96,16 +99,20 @@ const PLAY_SNAP_FROM = {
   diveLeft: "player1",
   barnPlay: "offenseP5",
   scrambledEggs: "offenseP5",
-  pigPenScreen: "player1",
+  hayBaleHook: "offenseP5",
   cornfieldCross: "player1",
-  barnDoorBoot: "player1"
+  barnDoorBoot: "player1",
+  siloSlant: "offenseP5",
+  pasturePop: "offenseP5",
+  fencePost: "offenseP5",
+  mudHoleDive: "player1"
 };
 
 const FORMATION_DIAGRAM_DOT = {
   player1: { color: "#93c5fd", r: 4 },
   lilTunnelPete: { color: "#c8a97e", r: 3 },
   allyHorse: { color: "#f97316", r: 3 },
-  offenseP4: { color: "#f97316", r: 3 },
+  offenseP4: { color: "#a78bfa", r: 3 },
   offenseP5: { color: "#c8a97e", r: 3 }
 };
 
@@ -116,6 +123,41 @@ function applyBuiltSpots(spots) {
     entity.y = s.y;
     clampPlayerToField(entity);
   });
+}
+
+/**
+ * Trips WR triangle: outside WR on LOS, slot at apex (S/2 back, √3·S/2 inside), back WR on sideline at S back.
+ * @returns {Array<{id:string,xYd:number,x:number,y:number,yNorm:number}>}
+ */
+function buildTripsEquilateralSpots(lineX, strength, fy, fh, toNorm) {
+  const S = TRIPS_TRIANGLE_YARDS;
+  const midY = fy + fh / 2;
+  const outsideY = formationSidelineY(allyHorse, strength);
+  const heightPx = ((S * Math.sqrt(3)) / 2) * YARDS_TO_PIXELS;
+  const slotY = strength === "left" ? outsideY + heightPx : outsideY - heightPx;
+  const clampEntityY = (entity, y) =>
+    clamp(y, fy + entity.radius, fy + fh - entity.radius);
+
+  const peteY = clampEntityY(lilTunnelPete, slotY);
+  return [
+    { id: "offenseP5", xYd: 0, x: lineX, y: midY, yNorm: toNorm(midY) },
+    { id: "allyHorse", xYd: 0, x: lineX, y: outsideY, yNorm: toNorm(outsideY) },
+    { id: "player1", xYd: -10, x: getOffsetX(lineX, -10), y: midY, yNorm: toNorm(midY) },
+    {
+      id: "lilTunnelPete",
+      xYd: -S / 2,
+      x: getOffsetX(lineX, -S / 2),
+      y: peteY,
+      yNorm: toNorm(peteY),
+    },
+    {
+      id: "offenseP4",
+      xYd: -S,
+      x: getOffsetX(lineX, -S),
+      y: outsideY,
+      yNorm: toNorm(outsideY),
+    },
+  ];
 }
 
 /** Canonical spot list for a formation — used by apply + play diagrams. */
@@ -199,45 +241,6 @@ function buildFormationSpots(lineX, formationId, options = {}) {
       add("player1", -10, resolveFormationY("mid", player1));
       break;
 
-    case "pigPenTwoOL": {
-      add("offenseP5", 0, resolveFormationY("topSlot", offenseP5));
-      add("offenseP4", 0, resolveFormationY("mid", offenseP4));
-      add("player1", 0, resolveFormationY("mid", player1));
-      const wrY = typeof getPigPenScreenSidelineY === "function"
-        ? getPigPenScreenSidelineY(lilTunnelPete)
-        : formationSidelineY(lilTunnelPete, "right");
-      const wrX = typeof clampPigPenOffenseBehindLineOfScrimmageX === "function"
-        ? clampPigPenOffenseBehindLineOfScrimmageX(
-          clampPlayableX(getOffsetX(lineX, -PIG_PEN_FORMATION_WR_BACK_YD), lilTunnelPete.radius),
-          lilTunnelPete.radius
-        )
-        : getOffsetX(lineX, -PIG_PEN_FORMATION_WR_BACK_YD);
-      spots.push({
-        id: "lilTunnelPete",
-        xYd: -PIG_PEN_FORMATION_WR_BACK_YD,
-        x: wrX,
-        y: wrY,
-        yNorm: toNorm(wrY)
-      });
-      const rbX = typeof clampPigPenOffenseBehindLineOfScrimmageX === "function"
-        ? clampPigPenOffenseBehindLineOfScrimmageX(
-          clampPlayableX(getOffsetX(lineX, -PIG_PEN_FORMATION_RB_BACK_YD), allyHorse.radius),
-          allyHorse.radius
-        )
-        : getOffsetX(lineX, -PIG_PEN_FORMATION_RB_BACK_YD);
-      const rbY = typeof getPigPenScreenSidelineY === "function"
-        ? getPigPenScreenSidelineY(allyHorse)
-        : wrY;
-      spots.push({
-        id: "allyHorse",
-        xYd: -PIG_PEN_FORMATION_RB_BACK_YD,
-        x: rbX,
-        y: rbY,
-        yNorm: toNorm(rbY)
-      });
-      break;
-    }
-
     case "doublesCrossTwoOL":
       add("offenseP4", 0, resolveFormationY("topSlot", offenseP4));
       add("offenseP5", 0, resolveFormationY("mid", offenseP5));
@@ -246,30 +249,8 @@ function buildFormationSpots(lineX, formationId, options = {}) {
       add("lilTunnelPete", -DOUBLES_CROSS_WR_BACK_YD, formationSidelineY(lilTunnelPete, "right"));
       break;
 
-    case "shotgunTrips": {
-      const S = TRIPS_TRIANGLE_YARDS;
-      const outsideY = formationSidelineY(allyHorse, strength);
-      const inwardPx = (S * Math.sqrt(3) / 2) * YARDS_TO_PIXELS;
-      const slotY = strength === "left" ? outsideY + inwardPx : outsideY - inwardPx;
-      add("offenseP5", 0, midY);
-      add("allyHorse", 0, outsideY);
-      add("player1", -10, midY);
-      spots.push({
-        id: "lilTunnelPete",
-        xYd: -S / 2,
-        x: getOffsetX(lineX, -S / 2),
-        y: clamp(slotY, fy + lilTunnelPete.radius, fy + fh - lilTunnelPete.radius),
-        yNorm: toNorm(clamp(slotY, fy + lilTunnelPete.radius, fy + fh - lilTunnelPete.radius))
-      });
-      spots.push({
-        id: "offenseP4",
-        xYd: -S,
-        x: getOffsetX(lineX, -S),
-        y: outsideY,
-        yNorm: toNorm(outsideY)
-      });
-      break;
-    }
+    case "shotgunTrips":
+      return buildTripsEquilateralSpots(lineX, strength, fy, fh, toNorm);
 
     default:
       return buildFormationSpots(lineX, "genericThreeOL", options);
@@ -284,19 +265,39 @@ function getFormationDiagramSpots(playKey, losX, dLeft, dTop, diagW, diagH) {
   const refLineX = FIELD.x + FIELD.endZoneWidth + 50 * YARDS_TO_PIXELS;
   const spots = buildFormationSpots(refLineX, formationId, { strength });
   const dotPad = Math.max(3, Math.min(diagW, diagH) * 0.045);
-  const backPx = Math.max(8, losX - dLeft - dotPad);
-  const maxBackYd = Math.max(
-    4,
-    ...spots.map((s) => Math.max(0, (refLineX - s.x) / YARDS_TO_PIXELS))
-  );
-  const xPerYd = backPx / maxBackYd;
-  const ySpan = Math.max(8, diagH - dotPad * 2);
-  return spots.map((s) => ({
-    id: s.id,
-    diagX: losX + (s.x - refLineX) / YARDS_TO_PIXELS * xPerYd,
-    diagY: dTop + dotPad + s.yNorm * ySpan,
-    style: FORMATION_DIAGRAM_DOT[s.id] || { color: "#ffffff", r: 3 }
-  }));
+  const drawW = diagW - dotPad * 2;
+  const drawH = diagH - dotPad * 2;
+  const xs = spots.map((s) => s.x).concat([refLineX]);
+  const ys = spots.map((s) => s.y);
+  const margin = 1.5 * YARDS_TO_PIXELS;
+  const minX = Math.min(...xs) - margin;
+  const maxX = Math.max(...xs) + margin;
+  const minY = Math.min(...ys) - margin;
+  const maxY = Math.max(...ys) + margin;
+  const fieldW = Math.max(maxX - minX, 8 * YARDS_TO_PIXELS);
+  const fieldH = Math.max(maxY - minY, 8 * YARDS_TO_PIXELS);
+  const scale = Math.min(drawW / fieldW, drawH / fieldH) * 0.9;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const diagCenterX = dLeft + diagW / 2;
+  const diagCenterY = dTop + diagH / 2;
+  const refSize = Math.min(diagW, diagH);
+  const tripsPass = playKey === "passRight" || playKey === "passLeft";
+  const wrIds = new Set(["allyHorse", "lilTunnelPete", "offenseP4"]);
+
+  return spots.map((s) => {
+    const style = FORMATION_DIAGRAM_DOT[s.id] || { color: "#ffffff", r: 3 };
+    const wrDot = tripsPass && wrIds.has(s.id);
+    return {
+      id: s.id,
+      diagX: diagCenterX + (s.x - centerX) * scale,
+      diagY: diagCenterY + (s.y - centerY) * scale,
+      style: {
+        color: style.color,
+        r: wrDot ? Math.max(2, refSize * 0.02) : Math.max(style.r, refSize * 0.032),
+      },
+    };
+  });
 }
 
 function getSnapFromForPlay(playKey) {
@@ -351,14 +352,6 @@ function applyShotgunDoublesTwoOL(lineX, options = {}) {
   }
 }
 
-/** 2 OL + screen WR + RB stacked (spread). */
-function applyPigPenTwoOL(lineX, options = {}) {
-  applyBuiltSpots(buildFormationSpots(lineX, "pigPenTwoOL", options));
-  if (options.snapBall !== false) {
-    setFormationBallCarrier(options.snapFrom || "player1");
-  }
-}
-
 /** 2 OL + WR top LOS + WR backfield bottom. */
 function applyDoublesCrossTwoOL(lineX, options = {}) {
   applyBuiltSpots(buildFormationSpots(lineX, "doublesCrossTwoOL", options));
@@ -367,7 +360,7 @@ function applyDoublesCrossTwoOL(lineX, options = {}) {
   }
 }
 
-/** 1 C + 3 WR equilateral triangle (S = 5 yd) + shotgun QB. */
+/** 1 C + 3 WR equilateral triangle + shotgun QB. */
 function applyShotgunTrips(lineX, options = {}) {
   applyBuiltSpots(buildFormationSpots(lineX, "shotgunTrips", options));
   if (options.snapBall !== false) {
@@ -382,7 +375,6 @@ const FORMATION_APPLIERS = {
   sweepWingTwoOL: applySweepWingTwoOL,
   sweepWingOneOL: applySweepWingOneOL,
   shotgunDoublesTwoOL: applyShotgunDoublesTwoOL,
-  pigPenTwoOL: applyPigPenTwoOL,
   doublesCrossTwoOL: applyDoublesCrossTwoOL,
   shotgunTrips: applyShotgunTrips
 };
@@ -393,7 +385,7 @@ function getFormationForPlay(playKey) {
 
 function getTripsStrengthForPlay(playKey) {
   if (playKey === "passLeft" || playKey === "sweepLeft") return "left";
-  if (playKey === "passRight" || playKey === "sweepRight") return "right";
+  if (playKey === "passRight" || playKey === "sweepRight" || playKey === "fencePost") return "right";
   return "right";
 }
 

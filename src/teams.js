@@ -1,8 +1,7 @@
 // =========================================================
-// Play mode — 5 teams, 5 players each (3 on the field: qb, wr, flex; p4 & p5 are full squad in pick screen)
+// Play mode — 32 teams, 11-man rosters (5 starters on field + up to 6 bench)
+// TEAMS and PLAY_TEAM_IDS are built in leagueTeams.js
 // =========================================================
-
-const PLAY_TEAM_IDS = ["noFlyZone", "pasture", "barnaby", "professorPig", "creekCrew"];
 
 function getTeamSelectPageCount() {
   return PLAY_TEAM_IDS.length;
@@ -19,15 +18,16 @@ function getTeamIdForTeamSelectPage(pageIndex) {
 function getTeamSelectGeometry() {
   const M = 32;
   const PAD = 12;
-  const BANNER_H = 200;
-  const NAME_H = 26;
-  const ROSTER_BLOCK = 90;
+  const BANNER_H = 92;
+  const NAME_H = 28;
+  const ROSTER_ROW_H = 50;
+  const ROSTER_BLOCK = ROSTER_ROW_H * 5 + 8;
   const bigH = PAD + BANNER_H + NAME_H + 4 + ROSTER_BLOCK + PAD;
-  const y0 = 64;
+  const y0 = 50;
   const x0 = M;
   const w0 = canvas.width - 2 * M;
-  const yNav = y0 + bigH + 10;
-  return { M, PAD, BANNER_H, NAME_H, ROSTER_BLOCK, bigH, y0, x0, w0, yNav };
+  const yNav = y0 + bigH + 8;
+  return { M, PAD, BANNER_H, NAME_H, ROSTER_BLOCK, ROSTER_ROW_H, bigH, y0, x0, w0, yNav };
 }
 
 function getTeamSelectPageNavRects() {
@@ -42,11 +42,13 @@ function getTeamSelectPageNavRects() {
     next: { x: cx + 14, y, w: 72, h: 32 }
   };
 }
-const ROSTER_FIELD_KEYS = ["qb", "wr", "flex"];
-const ROSTER_ALL_KEYS = ["qb", "wr", "flex", "p4", "p5"];
+const ROSTER_FIELD_KEYS = ROSTER_STARTER_KEYS.slice(0, 3);
+const ROSTER_ALL_KEYS = ROSTER_STARTER_KEYS;
 
 function getFullTeamRosterTextLine(T) {
-  return ROSTER_ALL_KEYS.map((k) => T.roster[k].displayLabel).join(", ");
+  const starters = ROSTER_STARTER_KEYS.map((k) => T.roster[k].displayLabel).join(", ");
+  const benchCount = countRosterPlayers(T.roster) - ROSTER_STARTER_KEYS.length;
+  return benchCount > 0 ? `${starters} (+${benchCount} bench)` : starters;
 }
 
 function hexToRgba(hex, alpha) {
@@ -72,168 +74,17 @@ function getPlayerShadowColor(player) {
   return "rgba(0,0,0,0.28)";
 }
 
-const TEAMS = {
-  noFlyZone: {
-    id: "noFlyZone",
-    name: "No Fly-Zone",
-    shadowColor: "rgba(120,113,108,0.45)",
-    endZoneColor: "#57534e",
-    endZoneFontFamily: "'Oswald', sans-serif",
-    bannerSrc: "assets/teams/team-no-fly-zone.png",
-    roster: {
-      qb: {
-        displayLabel: "Nightwing",
-        appearanceId: "nightwing",
-        color: "#78716c",
-        ballAccent: "#fde68a"
-      },
-      wr: {
-        displayLabel: "Pat the Gnat",
-        appearanceId: "patTheGnat",
-        color: "#a8a29e",
-        ballAccent: "#e7e5e4"
-      },
-      flex: {
-        displayLabel: "Joe",
-        appearanceId: "joeCrow",
-        color: "#171717",
-        ballAccent: "#fbbf24"
-      },
-      p4: { displayLabel: "Buzz", appearanceId: "squadA", color: "#64748b", ballAccent: "#fef08a" },
-      p5: { displayLabel: "Nix", appearanceId: "squadB", color: "#0f766e", ballAccent: "#a7f3d0" }
-    }
-  },
-  pasture: {
-    id: "pasture",
-    name: "The Barn Raiders",
-    shadowColor: "rgba(132,204,22,0.42)",
-    endZoneColor: "#365314",
-    endZoneFontFamily: "'Merriweather', Georgia, serif",
-    bannerSrc: "assets/teams/team-barn-raiders.png",
-    roster: {
-      qb: {
-        displayLabel: "Whiskers",
-        appearanceId: "whiskersRat",
-        color: "#6b7280",
-        ballAccent: "#fbcfe8"
-      },
-      wr: {
-        displayLabel: "Wooly",
-        appearanceId: "woolySheep",
-        color: "#fafaf9",
-        ballAccent: "#d6d3d1"
-      },
-      flex: {
-        displayLabel: "Billy",
-        appearanceId: "billyGoat",
-        color: "#d6c4a8",
-        ballAccent: "#fef3c7"
-      },
-      p4: { displayLabel: "Clove", appearanceId: "squadA", color: "#84cc16", ballAccent: "#f7fee7" },
-      p5: { displayLabel: "Bram", appearanceId: "squadB", color: "#3f6212", ballAccent: "#d9f99d" }
-    }
-  },
-  barnaby: {
-    id: "barnaby",
-    name: "The Haymakers",
-    shadowColor: "rgba(59,130,246,0.42)",
-    endZoneColor: "#1d4ed8",
-    endZoneFontFamily: "'Anton', sans-serif",
-    bannerSrc: "assets/teams/team-haymakers.png",
-    roster: {
-      qb: {
-        displayLabel: "Barnaby",
-        appearanceId: "player1",
-        color: COLORS.donkey,
-        ballAccent: "#bfdbfe"
-      },
-      wr: {
-        displayLabel: "Sir Neigh-a-Lot",
-        appearanceId: "allyHorse",
-        color: COLORS.horse,
-        ballAccent: "#fed7aa"
-      },
-      flex: {
-        displayLabel: "Lil' Tunnel Pete",
-        appearanceId: "lilTunnelPete",
-        color: "#c8a97e",
-        ballAccent: "#fef08a"
-      },
-      p4: { displayLabel: "Duke", appearanceId: "squadA", color: "#4c1d95", ballAccent: "#e9d5ff" },
-      p5: { displayLabel: "Dusty", appearanceId: "squadB", color: "#713f12", ballAccent: "#fde68a" }
-    }
-  },
-  professorPig: {
-    id: "professorPig",
-    name: "The Mudsketeers",
-    shadowColor: "rgba(236,72,153,0.42)",
-    endZoneColor: "#be185d",
-    endZoneFontFamily: "'Bangers', cursive",
-    bannerSrc: "assets/teams/team-mudsketeers.png",
-    roster: {
-      qb: {
-        displayLabel: "Professor Pig",
-        appearanceId: "player2",
-        color: COLORS.pig,
-        ballAccent: "#fbcfe8"
-      },
-      wr: {
-        displayLabel: "Deputy Hee-Haw",
-        appearanceId: "allyDonkey",
-        color: COLORS.sidekickDonkey,
-        ballAccent: "#bbf7d0"
-      },
-      flex: {
-        displayLabel: "Big Coop",
-        appearanceId: "cluckNorris",
-        color: "#ffffff",
-        ballAccent: "#fca5a5"
-      },
-      p4: { displayLabel: "Grit", appearanceId: "squadA", color: "#1e1b4b", ballAccent: "#c4b5fd" },
-      p5: { displayLabel: "Slink", appearanceId: "squadB", color: "#0c4a6e", ballAccent: "#bae6fd" }
-    }
-  },
-  creekCrew: {
-    id: "creekCrew",
-    name: "The Creek Crew",
-    shadowColor: "rgba(13,148,136,0.42)",
-    endZoneColor: "#0f766e",
-    endZoneFontFamily: "'Permanent Marker', cursive",
-    bannerSrc: "assets/teams/team-creek-crew.png",
-    roster: {
-      qb: {
-        displayLabel: "Rex",
-        appearanceId: "daxBadger",
-        color: "#4b5563",
-        ballAccent: "#fbbf24"
-      },
-      wr: {
-        displayLabel: "Fuzz",
-        appearanceId: "bessCow",
-        color: "#e7e5e4",
-        ballAccent: "#fecdd3"
-      },
-      flex: {
-        displayLabel: "Vex",
-        appearanceId: "tuckDuck",
-        color: "#0d9488",
-        ballAccent: "#5eead4"
-      },
-      p4: { displayLabel: "Pip", appearanceId: "squadA", color: "#c026d3", ballAccent: "#f5d0fe" },
-      p5: { displayLabel: "Oz", appearanceId: "squadB", color: "#0e7490", ballAccent: "#a5f3fc" }
-    }
-  }
-};
-
 function getTeamSelectLayout() {
   const g = getTeamSelectGeometry();
   return {
     back: { x: 20, y: 14, w: 118, h: 32 },
-    start: { x: canvas.width / 2 - 130, y: 458, w: 260, h: 40 },
+    devGuide: { x: canvas.width / 2 - 92, y: 14, w: 184, h: 32 },
+    start: { x: canvas.width / 2 - 130, y: g.yNav + 32, w: 260, h: 40 },
     bigCard: { x: g.x0, y: g.y0, w: g.w0, h: g.bigH },
     pad: g.PAD,
     bannerH: g.BANNER_H,
-    nameStripH: g.NAME_H
+    nameStripH: g.NAME_H,
+    rosterRowH: g.ROSTER_ROW_H
   };
 }
 
@@ -246,7 +97,7 @@ function getOpponentRevealLayout() {
   };
 }
 
-function applySkin(entity, skin, teamTag, scoreOwner) {
+function applySkin(entity, skin, teamTag, scoreOwner, slotKey) {
   if (entity.baseSpeed == null) entity.baseSpeed = entity.speed;
   entity.displayLabel = skin.displayLabel;
   if (skin.legacyLabel) entity.legacyLabel = skin.legacyLabel; else delete entity.legacyLabel;
@@ -256,8 +107,8 @@ function applySkin(entity, skin, teamTag, scoreOwner) {
   entity.teamOwnerId = scoreOwner;
   entity.teamTag = teamTag;
   entity.teamShadowColor = getTeamShadowColorForTag(teamTag);
-  // Tune by roster character: only Joe should be slower.
-  entity.speed = skin.displayLabel === "Joe" ? entity.baseSpeed * 0.62 : entity.baseSpeed;
+  entity.rosterSlotKey = slotKey || null;
+  applyEntityAttributes(entity, skin, slotKey);
 }
 
 /**
@@ -270,16 +121,16 @@ function applyPlayModeTeamLayout(offenseTeamId, defenseTeamId) {
   const D = TEAMS[defenseTeamId].roster;
   const offOwner = offenseTeamId === userId ? "player1" : "player2";
   const defOwner = defenseTeamId === userId ? "player1" : "player2";
-  applySkin(player1, O.qb, offenseTeamId, offOwner);
-  applySkin(allyHorse, O.wr, offenseTeamId, offOwner);
-  applySkin(lilTunnelPete, O.flex, offenseTeamId, offOwner);
-  applySkin(offenseP4, O.p4, offenseTeamId, offOwner);
-  applySkin(offenseP5, O.p5, offenseTeamId, offOwner);
-  applySkin(player2, D.qb, defenseTeamId, defOwner);
-  applySkin(allyDonkey, D.wr, defenseTeamId, defOwner);
-  applySkin(cluckNorris, D.flex, defenseTeamId, defOwner);
-  applySkin(defenseP4, D.p4, defenseTeamId, defOwner);
-  applySkin(defenseP5, D.p5, defenseTeamId, defOwner);
+  applySkin(player1, O.qb, offenseTeamId, offOwner, "qb");
+  applySkin(allyHorse, O.wr, offenseTeamId, offOwner, "wr");
+  applySkin(lilTunnelPete, O.flex, offenseTeamId, offOwner, "flex");
+  applySkin(offenseP4, O.p4, offenseTeamId, offOwner, "p4");
+  applySkin(offenseP5, O.p5, offenseTeamId, offOwner, "p5");
+  applySkin(player2, D.qb, defenseTeamId, defOwner, "qb");
+  applySkin(allyDonkey, D.wr, defenseTeamId, defOwner, "wr");
+  applySkin(cluckNorris, D.flex, defenseTeamId, defOwner, "flex");
+  applySkin(defenseP4, D.p4, defenseTeamId, defOwner, "p4");
+  applySkin(defenseP5, D.p5, defenseTeamId, defOwner, "p5");
 }
 
 function resetPlayModeTeamScores() {

@@ -4,7 +4,7 @@
 
 // ── Menu music ────────────────────────────────────────────
 const menuMusic = document.getElementById("menuMusic");
-menuMusic.volume = 0.5;
+const MENU_MUSIC_BASE = 0.5;
 
 let _menuMusicState = null; // "playing" | "stopped"
 
@@ -25,7 +25,7 @@ function stopMenuMusic() {
 
 // ── Game / Passing / Play mode music ──────────────────────
 const gameMusic = document.getElementById("gameMusic");
-gameMusic.volume = 0.45;
+const GAME_MUSIC_BASE = 0.45;
 
 let _gameMusicState = null;
 
@@ -51,6 +51,19 @@ function stopGameMusic() {
 window.addEventListener("click",    () => { if (typeof game !== "undefined" && game.state === "menu") startMenuMusic(); }, { once: false });
 window.addEventListener("keydown",  () => { if (typeof game !== "undefined" && game.state === "menu") startMenuMusic(); }, { once: false });
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const sfxGain = audioCtx.createGain();
+sfxGain.connect(audioCtx.destination);
+
+function applyGameSettingsAudio(settings) {
+  const src = settings || (typeof loadGameSettings === "function" ? loadGameSettings() : null);
+  const musicMult = clamp((src && src.musicVolume != null ? src.musicVolume : 100), 0, 100) / 100;
+  const sfxMult = clamp((src && src.sfxVolume != null ? src.sfxVolume : 100), 0, 100) / 100;
+  menuMusic.volume = MENU_MUSIC_BASE * musicMult;
+  gameMusic.volume = GAME_MUSIC_BASE * musicMult;
+  sfxGain.gain.value = sfxMult;
+}
+
+applyGameSettingsAudio(typeof loadGameSettings === "function" ? loadGameSettings() : { musicVolume: 100, sfxVolume: 100 });
 
 function resumeAudio() {
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -91,7 +104,7 @@ function playHorseNeigh() {
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain.connect(sfxGain);
 
   lfo.start(now);
   osc.start(now);
@@ -115,7 +128,7 @@ function playBunnySqueak() {
     gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.13);
 
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(sfxGain);
     osc.start(now + offset);
     osc.stop(now + offset + 0.14);
   });
@@ -145,7 +158,7 @@ function playInterceptionAlertAudio() {
     gain.gain.setValueAtTime(0.2, now + t);
     gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.1);
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(sfxGain);
     osc.start(now + t);
     osc.stop(now + t + 0.11);
   });
@@ -170,7 +183,7 @@ function playMudThudAudio() {
   src.buffer = buffer;
   src.connect(filter);
   filter.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain.connect(sfxGain);
   src.start(now);
 }
 
@@ -186,7 +199,7 @@ function playSackBuzzAudio() {
   bg.gain.setValueAtTime(0.12, now);
   bg.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
   buzz.connect(bg);
-  bg.connect(audioCtx.destination);
+  bg.connect(sfxGain);
   buzz.start(now);
   buzz.stop(now + 0.42);
 
@@ -199,7 +212,7 @@ function playSackBuzzAudio() {
   sg.gain.linearRampToValueAtTime(0.18, now + 0.08);
   sg.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
   squeal.connect(sg);
-  sg.connect(audioCtx.destination);
+  sg.connect(sfxGain);
   squeal.start(now + 0.05);
   squeal.stop(now + 0.25);
 }
