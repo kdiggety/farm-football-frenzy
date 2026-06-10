@@ -35,7 +35,8 @@ function isQbDropbackPreviewPlay(playKey) {
     playKey === "barnDoorBoot" ||
     playKey === "siloSlant" ||
     playKey === "pasturePop" ||
-    playKey === "fencePost"
+    playKey === "fencePost" ||
+    (typeof isEasyPassPlay === "function" && isEasyPassPlay(playKey))
   );
 }
 
@@ -59,6 +60,12 @@ function getQbDropbackPreviewEnd(playKey) {
     return {
       x: clampPlayableX(lineX - dir * 10 * YARDS_TO_PIXELS, player1.radius),
       y: FIELD.y + FIELD.height / 2,
+    };
+  }
+  if (typeof isEasyPassPlay === "function" && isEasyPassPlay(playKey)) {
+    return {
+      x: getEasyPassDropbackTarget(lineX),
+      y: player1.y,
     };
   }
   return {
@@ -306,14 +313,7 @@ function moveReceiverCornerRoute(entity, geometry, speed, dt, state) {
     return;
   }
 
-  if (state.phase === "run") {
-    continueReceiverAfterLandmark(entity, cornerEnd.x, cornerEnd.y, speed, dt);
-    return;
-  }
-  moveToward(entity, cornerEnd.x, cornerEnd.y, speed, dt);
-  if (distance(entity.x, entity.y, cornerEnd.x, cornerEnd.y) < 14) {
-    state.phase = "run";
-  }
+  runReceiverToLandmarkOrContinue(entity, cornerEnd.x, cornerEnd.y, speed, dt);
 }
 
 /** Trips slot (Pete): 12 yd stem, inside hook at depth, 5 yd comeback angled toward the QB. */
@@ -384,14 +384,7 @@ function moveReceiverCurlRoute(entity, geometry, speed, dt, state) {
     return;
   }
 
-  if (state.phase === "run") {
-    continueReceiverAfterLandmark(entity, curlEnd.x, curlEnd.y, speed, dt);
-    return;
-  }
-  moveToward(entity, curlEnd.x, curlEnd.y, speed, dt);
-  if (distance(entity.x, entity.y, curlEnd.x, curlEnd.y) < 14) {
-    state.phase = "run";
-  }
+  runReceiverToLandmarkOrContinue(entity, curlEnd.x, curlEnd.y, speed, dt);
 }
 
 function sampleArc(cx, cy, r, startAngle, endAngle, steps = 10) {
@@ -600,11 +593,17 @@ function getBarnDoorBootQbWaypoints(lineX) {
 
 function getBarnDoorBootRoutes() {
   const lineX = game.playModeLineX;
+  const dir = getOffenseDirection();
+  const fakeRunX = clampPlayableX(lineX - dir * 2.8 * YARDS_TO_PIXELS, 10);
+  const fakeRunY = FIELD.y + FIELD.height * 0.68;
+  const wrOutsideBreakX = clampPlayableX(lineX + dir * 24 * YARDS_TO_PIXELS, 10);
+  const wrOutsideStemX = clampPlayableX(lineX + dir * 14 * YARDS_TO_PIXELS, 10);
   return [
+    polyRoute(pos(allyHorse), [{ x: fakeRunX, y: fakeRunY }], FIELD_ROUTE_COLORS.horse),
     polyRoute(
-      getQbDropbackPreviewStart(),
-      getBarnDoorBootQbWaypoints(lineX),
-      FIELD_ROUTE_COLORS.qb
+      pos(lilTunnelPete),
+      [{ x: wrOutsideStemX, y: FIELD.y + 52 }, { x: wrOutsideBreakX, y: FIELD.y + 52 }],
+      FIELD_ROUTE_COLORS.pete
     ),
   ];
 }
@@ -793,13 +792,121 @@ function getDiveRightRbRoute() {
   return polyRoute(pos(offenseP4), [{ x: motionX, y: runLaneY }], FIELD_ROUTE_COLORS.p4);
 }
 
+function getMudHoleDiveRbRoute() {
+  const runLaneY = FIELD.y + FIELD.height * 0.55;
+  const motionX = getOffsetX(game.playModeLineX, -8.5);
+  return polyRoute(pos(offenseP4), [{ x: motionX, y: runLaneY }], FIELD_ROUTE_COLORS.p4);
+}
+
 function getDiveLeftRbRoute() {
+  const dir = getOffenseDirection();
   const r = 5 * YARDS_TO_PIXELS;
   const cx = getOffsetX(game.playModeLineX, -5);
   const cy = FIELD.y + FIELD.height / 2;
-  const arcPts = sampleArc(cx, cy, r, Math.PI, Math.PI + Math.PI / 2, 10);
-  const handoffPt = arcPts[arcPts.length - 1];
-  return polyRoute(pos(allyHorse), [handoffPt], FIELD_ROUTE_COLORS.horse);
+  const startAngle = dir > 0 ? Math.PI : 0;
+  const endAngle = dir > 0 ? Math.PI + Math.PI / 2 : Math.PI / 2;
+  const arcPts = sampleArc(cx, cy, r, startAngle, endAngle, 10);
+  return polyRoute(pos(lilTunnelPete), arcPts.slice(1), FIELD_ROUTE_COLORS.pete);
+}
+
+function getSweepLeadBlockRoutePreviews() {
+  const lineX = game.playModeLineX;
+  const halfGap = 5 * YARDS_TO_PIXELS;
+  const stemX = getOffsetX(lineX, 14);
+  const blockX = getOffsetX(lineX, 8);
+  const horseY = allyHorse.y;
+  const p5Y = offenseP5.y;
+  return [
+    polyRoute(
+      pos(allyHorse),
+      [{ x: stemX - halfGap, y: horseY }, { x: blockX - halfGap, y: horseY }],
+      FIELD_ROUTE_COLORS.horse
+    ),
+    polyRoute(
+      pos(offenseP5),
+      [{ x: stemX + halfGap, y: p5Y }, { x: blockX + halfGap, y: p5Y }],
+      FIELD_ROUTE_COLORS.p5
+    ),
+  ];
+}
+
+function getEasyStraightUpRoute() {
+  const midY = getEasyStraightUpRunLaneY();
+  const handoffX = getOffsetX(game.playModeLineX, -4);
+  return polyRoute(pos(offenseP4), [{ x: handoffX, y: midY }], FIELD_ROUTE_COLORS.p4);
+}
+
+function getEasyQbKeepRoute() {
+  const midY = FIELD.y + FIELD.height / 2;
+  return polyRoute(pos(player1), [{ x: getOffsetX(game.playModeLineX, 8), y: midY }], FIELD_ROUTE_COLORS.p4);
+}
+
+function getEasyQuickOutRoute() {
+  const stemX = getOffsetX(game.playModeLineX, 6);
+  const { outX, outY } = getEasyOutBreakPoint(allyHorse, 10);
+  return polyRoute(pos(allyHorse), [{ x: stemX, y: allyHorse.y }, { x: outX, y: outY }], FIELD_ROUTE_COLORS.horse);
+}
+
+function getEasyFlatPassRoute() {
+  return polyRoute(
+    pos(lilTunnelPete),
+    [{ x: getOffsetX(game.playModeLineX, 5), y: lilTunnelPete.y }],
+    FIELD_ROUTE_COLORS.pete
+  );
+}
+
+function getEasyGoRouteRoute() {
+  return polyRoute(
+    pos(allyHorse),
+    [{ x: getOffsetX(game.playModeLineX, 16), y: allyHorse.y }],
+    FIELD_ROUTE_COLORS.horse
+  );
+}
+
+function getEasyCheckDownRoute() {
+  const midY = FIELD.y + FIELD.height / 2;
+  return polyRoute(
+    pos(offenseP4),
+    [{ x: getOffsetX(game.playModeLineX, 4), y: midY + 12 }],
+    FIELD_ROUTE_COLORS.p4
+  );
+}
+
+function getEasyPassFieldRoutePreviews(playKey) {
+  const lineX = game.playModeLineX;
+  const midY = FIELD.y + FIELD.height / 2;
+
+  if (playKey === "quickOut") {
+    const stemX = getOffsetX(lineX, 6);
+    const { outX, outY } = getEasyOutBreakPoint(allyHorse, 10);
+    return [
+      polyRoute(pos(allyHorse), [{ x: stemX, y: allyHorse.y }, { x: outX, y: outY }], FIELD_ROUTE_COLORS.horse),
+      polyRoute(pos(lilTunnelPete), [{ x: getOffsetX(lineX, 8), y: lilTunnelPete.y }], FIELD_ROUTE_COLORS.pete),
+      polyRoute(pos(offenseP4), [{ x: getOffsetX(lineX, 3), y: midY }], FIELD_ROUTE_COLORS.p4),
+    ];
+  }
+  if (playKey === "flatPass") {
+    return [
+      polyRoute(pos(lilTunnelPete), [{ x: getOffsetX(lineX, 5), y: lilTunnelPete.y }], FIELD_ROUTE_COLORS.pete),
+      polyRoute(pos(allyHorse), [{ x: getOffsetX(lineX, 14), y: allyHorse.y }], FIELD_ROUTE_COLORS.horse),
+      polyRoute(pos(offenseP4), [{ x: getOffsetX(lineX, 2), y: midY }], FIELD_ROUTE_COLORS.p4),
+    ];
+  }
+  if (playKey === "goRoute") {
+    return [
+      polyRoute(pos(allyHorse), [{ x: getOffsetX(lineX, 16), y: allyHorse.y }], FIELD_ROUTE_COLORS.horse),
+      polyRoute(pos(lilTunnelPete), [{ x: getOffsetX(lineX, 8), y: lilTunnelPete.y }], FIELD_ROUTE_COLORS.pete),
+      polyRoute(pos(offenseP4), [{ x: getOffsetX(lineX, 4), y: midY }], FIELD_ROUTE_COLORS.p4),
+    ];
+  }
+  if (playKey === "checkDown") {
+    return [
+      polyRoute(pos(offenseP4), [{ x: getOffsetX(lineX, 4), y: midY + 12 }], FIELD_ROUTE_COLORS.p4),
+      polyRoute(pos(allyHorse), [{ x: getOffsetX(lineX, 10), y: allyHorse.y }], FIELD_ROUTE_COLORS.horse),
+      polyRoute(pos(lilTunnelPete), [{ x: getOffsetX(lineX, 10), y: lilTunnelPete.y }], FIELD_ROUTE_COLORS.pete),
+    ];
+  }
+  return [];
 }
 
 function getPlayFieldRoutePreviews(playKey) {
@@ -808,10 +915,10 @@ function getPlayFieldRoutePreviews(playKey) {
   let routes;
   switch (playKey) {
     case "sweepRight":
-      routes = [getSweepRbArcRoute(false)];
+      routes = [getSweepRbArcRoute(false), ...getSweepLeadBlockRoutePreviews()];
       break;
     case "sweepLeft":
-      routes = [getSweepRbArcRoute(true)];
+      routes = [getSweepRbArcRoute(true), ...getSweepLeadBlockRoutePreviews()];
       break;
     case "passRight":
     case "passLeft":
@@ -838,17 +945,37 @@ function getPlayFieldRoutePreviews(playKey) {
     case "pasturePop":
       routes = getPasturePopRoutes();
       break;
-    case "fencePost":
-      routes = [...getTripsFormationTriangleGuide("passRight"), ...getTripsPassRoutes("passRight")];
+    case "fencePost": {
+      const tripsKey = typeof getTripsPassPlayKey === "function" ? getTripsPassPlayKey("fencePost") : "passRight";
+      routes = [...getTripsFormationTriangleGuide(tripsKey), ...getTripsPassRoutes(tripsKey)];
       break;
+    }
     case "mudHoleDive":
-      routes = [getDiveRightRbRoute()];
+      routes = [getMudHoleDiveRbRoute()];
       break;
     case "diveRight":
       routes = [getDiveRightRbRoute()];
       break;
     case "diveLeft":
       routes = [getDiveLeftRbRoute()];
+      break;
+    case "straightUp":
+      routes = [getEasyStraightUpRoute()];
+      break;
+    case "qbKeep":
+      routes = [getEasyQbKeepRoute()];
+      break;
+    case "quickOut":
+      routes = getEasyPassFieldRoutePreviews("quickOut");
+      break;
+    case "flatPass":
+      routes = getEasyPassFieldRoutePreviews("flatPass");
+      break;
+    case "goRoute":
+      routes = getEasyPassFieldRoutePreviews("goRoute");
+      break;
+    case "checkDown":
+      routes = getEasyPassFieldRoutePreviews("checkDown");
       break;
     default:
       routes = [];
@@ -985,9 +1112,10 @@ function getOffenseRouteTargets(playKey) {
       };
     }
     case "fencePost": {
-      const post = getTripsSevenPostGeometry("passRight");
-      const curl = getTripsSlotCurlGeometry("passRight");
-      const inRoute = getTripsInRouteGeometry("passRight");
+      const tripsKey = typeof getTripsPassPlayKey === "function" ? getTripsPassPlayKey("fencePost") : "passRight";
+      const post = getTripsSevenPostGeometry(tripsKey);
+      const curl = getTripsSlotCurlGeometry(tripsKey);
+      const inRoute = getTripsInRouteGeometry(tripsKey);
       return {
         qb: { x: getPassDropbackTarget(lineX), y: player1.y },
         horse: { x: post.postX, y: post.postY },
@@ -995,6 +1123,40 @@ function getOffenseRouteTargets(playKey) {
         p4: { x: inRoute.breakEnd.x, y: inRoute.breakEnd.y },
       };
     }
+    case "quickOut":
+      return {
+        qb: { x: getEasyPassDropbackTarget(lineX), y: player1.y },
+        horse: (() => {
+          const { outX, outY } = getEasyOutBreakPoint(allyHorse, 10);
+          return { x: outX, y: outY };
+        })(),
+        pete: { x: clampPlayableX(getOffsetX(lineX, 8), 16), y: lilTunnelPete.y },
+        p4: { x: clampPlayableX(getOffsetX(lineX, 3), 20), y: FIELD.y + FIELD.height * 0.5 },
+      };
+    case "flatPass":
+      return {
+        qb: { x: getEasyPassDropbackTarget(lineX), y: player1.y },
+        horse: { x: clampPlayableX(getOffsetX(lineX, 14), 8), y: allyHorse.y },
+        pete: { x: clampPlayableX(getOffsetX(lineX, 5), 10), y: lilTunnelPete.y },
+        p4: { x: clampPlayableX(getOffsetX(lineX, 2), 20), y: FIELD.y + FIELD.height * 0.5 },
+      };
+    case "goRoute":
+      return {
+        qb: { x: getEasyPassDropbackTarget(lineX), y: player1.y },
+        horse: { x: clampPlayableX(getOffsetX(lineX, 16), 6), y: allyHorse.y },
+        pete: { x: clampPlayableX(getOffsetX(lineX, 8), 14), y: lilTunnelPete.y },
+        p4: { x: clampPlayableX(getOffsetX(lineX, 4), 18), y: FIELD.y + FIELD.height * 0.5 },
+      };
+    case "checkDown":
+      return {
+        qb: { x: getEasyPassDropbackTarget(lineX), y: player1.y },
+        horse: { x: clampPlayableX(getOffsetX(lineX, 10), 10), y: allyHorse.y },
+        pete: { x: clampPlayableX(getOffsetX(lineX, 10), 10), y: lilTunnelPete.y },
+        p4: {
+          x: clampPlayableX(getOffsetX(lineX, 4), 16),
+          y: FIELD.y + FIELD.height * 0.5 + 12,
+        },
+      };
     default:
       return { qb: pos(player1) };
   }
@@ -1118,6 +1280,24 @@ function getDefenseDiveLeftCoveragePreviews() {
   ];
 }
 
+function getDefenseEasyRunCoveragePreviews(playKey) {
+  const lineX = game.playModeLineX;
+  const midY = FIELD.y + FIELD.height / 2;
+  const rusherX = getOffsetX(lineX, 7);
+  const carrierTarget =
+    playKey === "qbKeep"
+      ? { x: getOffsetX(lineX, 8), y: midY }
+      : { x: getOffsetX(lineX, -4), y: midY };
+
+  return [
+    defCoverageLine(player2, { x: rusherX, y: midY }, "Blitz"),
+    defCoverageLine(allyDonkey, carrierTarget, "Fill"),
+    defCoverageLine(cluckNorris, carrierTarget, "Fill", { dashed: true }),
+    defCoverageLine(defenseP4, carrierTarget, "Pursue", { dashed: true }),
+    defCoverageLine(defenseP5, carrierTarget, "Pursue", { dashed: true }),
+  ];
+}
+
 function getDefenseFieldCoveragePreviews(playKey) {
   if (!game.cpuOffense || !playKey || !game.playModeLineX) return [];
 
@@ -1129,6 +1309,22 @@ function getDefenseFieldCoveragePreviews(playKey) {
   }
   if (playKey === "diveLeft") {
     return getDefenseDiveLeftCoveragePreviews();
+  }
+  if (playKey === "mudHoleDive") {
+    const lineX = game.playModeLineX;
+    const rusherX = getOffsetX(lineX, 7);
+    const runLaneY = FIELD.y + FIELD.height * 0.55;
+    const motionX = getOffsetX(lineX, -8.5);
+    return [
+      defCoverageLine(player2, { x: rusherX, y: runLaneY }, "Blitz"),
+      defCoverageLine(defenseP4, pos(offenseP5), "CB — WR"),
+      defCoverageLine(defenseP5, pos(allyHorse), "Fit — FB"),
+      defCoverageLine(allyDonkey, { x: motionX, y: runLaneY }, "Fill", { dashed: true }),
+      defCoverageLine(cluckNorris, { x: motionX, y: runLaneY }, "Fill", { dashed: true }),
+    ];
+  }
+  if (playKey === "straightUp" || playKey === "qbKeep") {
+    return getDefenseEasyRunCoveragePreviews(playKey);
   }
   return getDefensePassCoveragePreviews(playKey);
 }
@@ -1490,7 +1686,17 @@ function buildPlayDiagramFieldRoutes(playKey, lineX, spots) {
   }
 
   if (playKey === "barnDoorBoot") {
+    const horseF = spot("allyHorse");
+    const peteF = spot("lilTunnelPete");
     const qbF = spot("player1");
+    routes.push(fieldPoly([horseF, { x: getOffsetX(lineX, -2.8), y: diagramLaneY(0.68) }], H, 4));
+    routes.push(
+      fieldPoly(
+        [peteF, { x: getOffsetX(lineX, 14), y: FIELD.y + 52 }, { x: getOffsetX(lineX, 24), y: FIELD.y + 52 }],
+        P,
+        4
+      )
+    );
     const waypoints = getBarnDoorBootQbWaypoints(lineX);
     routes.push(fieldPoly([qbF, ...waypoints], DIAGRAM_ROUTE_COLORS.qb, 4));
     return routes;
@@ -1542,7 +1748,8 @@ function buildPlayDiagramFieldRoutes(playKey, lineX, spots) {
   }
 
   if (playKey === "fencePost") {
-    return buildPlayDiagramFieldRoutes("passRight", lineX, spots);
+    const tripsKey = typeof getTripsPassPlayKey === "function" ? getTripsPassPlayKey("fencePost") : "passRight";
+    return buildPlayDiagramFieldRoutes(tripsKey, lineX, spots);
   }
 
   if (playKey === "mudHoleDive") {
@@ -1658,6 +1865,140 @@ function buildPlayDiagramFieldRoutes(playKey, lineX, spots) {
       )
     );
     routes.push(fieldPoly([spot("allyHorse"), ...arcPts.slice(1)], H, 4));
+    return routes;
+  }
+
+  if (playKey === "straightUp") {
+    routes.push(
+      fieldPoly(
+        [
+          spot("offenseP4"),
+          { x: diagramFieldX(lineX, -4), y: diagramLaneY(0.5) },
+        ],
+        X,
+        4
+      )
+    );
+    return routes;
+  }
+
+  if (playKey === "qbKeep") {
+    routes.push(
+      fieldPoly(
+        [
+          spot("player1"),
+          { x: diagramFieldX(lineX, 8), y: diagramLaneY(0.5) },
+        ],
+        DIAGRAM_ROUTE_COLORS.p4,
+        4
+      )
+    );
+    return routes;
+  }
+
+  if (playKey === "quickOut") {
+    const horseF = spot("allyHorse");
+    const midY = diagramLaneY(0.5);
+    const outY = horseF.y <= midY ? diagramLaneY(0.22) : diagramLaneY(0.78);
+    routes.push(
+      fieldPoly(
+        [
+          horseF,
+          { x: diagramFieldX(lineX, 6), y: horseF.y },
+          { x: diagramFieldX(lineX, 10), y: outY },
+        ],
+        H,
+        4
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [
+          spot("lilTunnelPete"),
+          { x: diagramFieldX(lineX, 8), y: spot("lilTunnelPete").y },
+        ],
+        P
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("offenseP4"), { x: diagramFieldX(lineX, 3), y: midY }],
+        X
+      )
+    );
+    return routes;
+  }
+
+  if (playKey === "flatPass") {
+    const peteF = spot("lilTunnelPete");
+    routes.push(
+      fieldPoly(
+        [peteF, { x: diagramFieldX(lineX, 5), y: peteF.y }],
+        P
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("allyHorse"), { x: diagramFieldX(lineX, 14), y: spot("allyHorse").y }],
+        H
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("offenseP4"), { x: diagramFieldX(lineX, 2), y: diagramLaneY(0.5) }],
+        X
+      )
+    );
+    return routes;
+  }
+
+  if (playKey === "goRoute") {
+    const horseF = spot("allyHorse");
+    routes.push(
+      fieldPoly(
+        [horseF, { x: diagramFieldX(lineX, 16), y: horseF.y }],
+        H
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("lilTunnelPete"), { x: diagramFieldX(lineX, 8), y: spot("lilTunnelPete").y }],
+        P
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("offenseP4"), { x: diagramFieldX(lineX, 4), y: diagramLaneY(0.5) }],
+        X
+      )
+    );
+    return routes;
+  }
+
+  if (playKey === "checkDown") {
+    const p4F = spot("offenseP4");
+    routes.push(
+      fieldPoly(
+        [
+          p4F,
+          { x: diagramFieldX(lineX, 4), y: diagramLaneY(0.5) + 12 },
+        ],
+        X,
+        4
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("allyHorse"), { x: diagramFieldX(lineX, 10), y: spot("allyHorse").y }],
+        H
+      )
+    );
+    routes.push(
+      fieldPoly(
+        [spot("lilTunnelPete"), { x: diagramFieldX(lineX, 10), y: spot("lilTunnelPete").y }],
+        P
+      )
+    );
     return routes;
   }
 

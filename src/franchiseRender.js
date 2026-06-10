@@ -28,16 +28,21 @@ function drawFranchiseMain() {
 
   ctx.fillStyle = "#1d4ed8";
   ctx.fillRect(L.newGame.x, L.newGame.y, L.newGame.w, L.newGame.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
   ctx.strokeRect(L.newGame.x, L.newGame.y, L.newGame.w, L.newGame.h);
-  ctx.fillText("New Franchise", L.newGame.x + L.newGame.w / 2, L.newGame.y + 30);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 16px Arial";
+  ctx.fillText("Create New", L.newGame.x + L.newGame.w / 2, L.newGame.y + 30);
 
-  if (hasSave) {
-    ctx.fillStyle = "#7f1d1d";
-    ctx.fillRect(L.deleteSave.x, L.deleteSave.y, L.deleteSave.w, L.deleteSave.h);
-    ctx.strokeRect(L.deleteSave.x, L.deleteSave.y, L.deleteSave.w, L.deleteSave.h);
-    ctx.font = "bold 13px Arial";
-    ctx.fillText("Delete Save", L.deleteSave.x + L.deleteSave.w / 2, L.deleteSave.y + 23);
-  }
+  ctx.fillStyle = hasSave ? "#7f1d1d" : "#4b5563";
+  ctx.fillRect(L.deleteSave.x, L.deleteSave.y, L.deleteSave.w, L.deleteSave.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(L.deleteSave.x, L.deleteSave.y, L.deleteSave.w, L.deleteSave.h);
+  ctx.fillStyle = hasSave ? COLORS.white : "#9ca3af";
+  ctx.font = "bold 14px Arial";
+  ctx.fillText("Delete Franchise", L.deleteSave.x + L.deleteSave.w / 2, L.deleteSave.y + 30);
 
   drawFranchiseBackButton(L.back, "Main Menu");
 }
@@ -179,12 +184,13 @@ function drawFranchiseHub() {
     ctx.textAlign = "center";
     ctx.fillText(canPlay ? "Play Game" : "No Game This Week", L.play.x + L.play.w / 2, L.play.y + 29);
 
-    ctx.fillStyle = "#374151";
+    ctx.fillStyle = "#2563eb";
     ctx.fillRect(L.advanceWeek.x, L.advanceWeek.y, L.advanceWeek.w, L.advanceWeek.h);
     ctx.strokeStyle = COLORS.white;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 2;
     ctx.strokeRect(L.advanceWeek.x, L.advanceWeek.y, L.advanceWeek.w, L.advanceWeek.h);
-    ctx.font = "bold 11px Arial";
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 12px Arial";
     ctx.fillText("Advance Week", L.advanceWeek.x + L.advanceWeek.w / 2, L.advanceWeek.y + 21);
   }
 
@@ -197,6 +203,23 @@ function drawFranchiseHub() {
     ctx.font = "bold 11px Arial";
     ctx.fillText("Sim To…", L.simTo.x + L.simTo.w / 2, L.simTo.y + 21);
   }
+
+  ctx.fillStyle = "#1d4ed8";
+  ctx.fillRect(L.createNew.x, L.createNew.y, L.createNew.w, L.createNew.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(L.createNew.x, L.createNew.y, L.createNew.w, L.createNew.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = "bold 11px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Create New", L.createNew.x + L.createNew.w / 2, L.createNew.y + 21);
+
+  ctx.fillStyle = "#7f1d1d";
+  ctx.fillRect(L.deleteFranchise.x, L.deleteFranchise.y, L.deleteFranchise.w, L.deleteFranchise.h);
+  ctx.strokeStyle = COLORS.white;
+  ctx.strokeRect(L.deleteFranchise.x, L.deleteFranchise.y, L.deleteFranchise.w, L.deleteFranchise.h);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillText("Delete Franchise", L.deleteFranchise.x + L.deleteFranchise.w / 2, L.deleteFranchise.y + 21);
 
   drawFranchiseBackButton(L.back, "Exit");
 }
@@ -481,6 +504,9 @@ function drawFranchiseStatsPanel(f, panel) {
   const tid = f.userTeamId;
   if (!f.seasonStats) f.seasonStats = createEmptyFranchiseSeasonStats();
   const st = f.seasonStats[tid] || createEmptyTeamStats();
+  const roster = (f.teams[tid] && f.teams[tid].roster) || {};
+  const qbName = getFranchiseRosterName(f, tid, "qb");
+  const rbName = getFranchiseRosterName(f, tid, "p4");
   ctx.textAlign = "left";
   ctx.fillStyle = "#e2e8f0";
   ctx.font = "bold 14px Arial";
@@ -491,9 +517,9 @@ function drawFranchiseStatsPanel(f, panel) {
   const pct = Math.round(getPassCompPct(st));
   const totalTD = (p.td || 0) + ((st.rushing && st.rushing.td) || 0);
   ctx.fillText(`Touchdowns: ${totalTD} total (${p.td || 0} pass · ${(st.rushing && st.rushing.td) || 0} rush)`, panel.x + 12, panel.y + 48);
-  ctx.fillText(`Pass: ${p.comp || 0}/${p.att || 0}  ${pct}%  ${p.yards || 0} yds  ${p.td || 0} TD  ${p.int || 0} INT`, panel.x + 12, panel.y + 68);
+  ctx.fillText(`Pass (${qbName}): ${p.comp || 0}/${p.att || 0}  ${pct}%  ${p.yards || 0} yds  ${p.td || 0} TD  ${p.int || 0} INT`, panel.x + 12, panel.y + 68);
   const r = st.rushing || {};
-  ctx.fillText(`Rush: ${r.att || 0} att  ${r.yards || 0} yds  ${r.td || 0} TD`, panel.x + 12, panel.y + 88);
+  ctx.fillText(`Rush (${rbName}): ${r.att || 0} att  ${r.yards || 0} yds  ${r.td || 0} TD`, panel.x + 12, panel.y + 88);
   const d = st.defense || {};
   ctx.fillText(`Defense: ${d.tackles || 0} TKL  ${d.sacks || 0} SK  ${d.int || 0} INT  ${d.tfl || 0} TFL`, panel.x + 12, panel.y + 108);
   const recv = st.receiving || {};
@@ -504,11 +530,16 @@ function drawFranchiseStatsPanel(f, panel) {
   y += 16;
   ctx.font = "12px Arial";
   ctx.fillStyle = "#cbd5e1";
-  for (const key of ["horse", "pete", "p4"]) {
+  const recvRows = [
+    { key: "horse", slot: "wr" },
+    { key: "pete", slot: "flex" },
+    { key: "p4", slot: "p4" }
+  ];
+  for (const { key, slot } of recvRows) {
     const row = recv[key];
     if (!row) continue;
-    const label = key === "horse" ? "WR" : key === "pete" ? "FLEX" : "RB";
-    ctx.fillText(`${label}: ${row.rec || 0} rec  ${row.yards || 0} yds  ${row.td || 0} TD`, panel.x + 20, y);
+    const name = (roster[slot] && roster[slot].displayLabel) || getRosterSlotLabel(slot);
+    ctx.fillText(`${name}: ${row.rec || 0} rec  ${row.yards || 0} yds  ${row.td || 0} TD`, panel.x + 20, y);
     y += 16;
   }
   if (!(p.att || r.att || totalTD)) {
@@ -537,7 +568,9 @@ function drawFranchiseAwardsPanel(f, panel) {
     ctx.fillText(a.title, panel.x + 12, y);
     ctx.fillStyle = "#93c5fd";
     ctx.font = "11px Arial";
-    ctx.fillText(`${TEAMS[a.teamId] ? TEAMS[a.teamId].name : a.teamId} — ${a.detail}`, panel.x + 20, y + 16);
+    const teamName = TEAMS[a.teamId] ? TEAMS[a.teamId].name : a.teamId;
+    const headline = a.playerName ? `${a.playerName} — ${teamName}` : teamName;
+    ctx.fillText(`${headline} · ${a.detail}`, panel.x + 20, y + 16);
     y += 34;
   }
 }
@@ -611,10 +644,10 @@ function drawFranchiseSchedulePanel(f, panel) {
   ctx.textAlign = "left";
   ctx.fillStyle = "#94a3b8";
   ctx.font = "bold 11px Arial";
-  ctx.fillText(`${allGames.length} games (${games.length} regular)`, panel.x + 8, panel.y + 14);
+  ctx.fillText(`${games.length} regular-season games${playoffGames.length ? ` · ${playoffGames.length} playoff` : ""}`, panel.x + 8, panel.y + 14);
   ctx.fillText("WK", panel.x + 8, panel.y + 32);
   ctx.fillText("OPPONENT", panel.x + 40, panel.y + 32);
-  ctx.fillText("RESULT (TDs)", panel.x + 250, panel.y + 32);
+  ctx.fillText("SCORE", panel.x + 250, panel.y + 32);
   let y = panel.y + 48;
   for (const g of allGames) {
     const opp = g.home === f.userTeamId ? g.away : g.home;
@@ -627,14 +660,19 @@ function drawFranchiseSchedulePanel(f, panel) {
     if (g.played) {
       const us = g.home === f.userTeamId ? g.homeScore : g.awayScore;
       const them = g.home === f.userTeamId ? g.awayScore : g.homeScore;
-      const usTD = g.home === f.userTeamId ? g.homeTDs : g.awayTDs;
-      const themTD = g.home === f.userTeamId ? g.awayTDs : g.homeTDs;
       const wl = us > them ? "W" : us < them ? "L" : "T";
-      ctx.fillText(`${us}-${them} (${usTD || 0}-${themTD || 0} TD) ${wl}`, panel.x + 250, y);
+      const scoreTxt = typeof formatFranchiseScheduleScore === "function"
+        ? formatFranchiseScheduleScore(us, them)
+        : `${us}-${them}`;
+      ctx.font = "bold 14px Arial";
+      ctx.fillStyle = wl === "W" ? "#86efac" : wl === "L" ? "#fca5a5" : "#fde68a";
+      ctx.fillText(`${scoreTxt} ${wl}`, panel.x + 250, y);
+      ctx.font = "11px Arial";
+      ctx.fillStyle = g.week === f.week && !g.played ? "#fde68a" : "#e2e8f0";
     } else {
       ctx.fillText("—", panel.x + 250, y);
     }
-    y += 14;
+    y += 16;
   }
 }
 
@@ -662,6 +700,17 @@ function drawFranchiseSimToPanel(f, panel) {
     ctx.font = "10px Arial";
     ctx.fillStyle = "#cbd5e1";
     ctx.fillText(m.sub, rect.x + rect.w / 2, rect.y + 32);
+  }
+
+  if (f.phase === "regular" || f.phase === "playoffs") {
+    ctx.fillStyle = "#374151";
+    ctx.fillRect(L.advanceWeek.x, L.advanceWeek.y, L.advanceWeek.w, L.advanceWeek.h);
+    ctx.strokeStyle = COLORS.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(L.advanceWeek.x, L.advanceWeek.y, L.advanceWeek.w, L.advanceWeek.h);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "bold 12px Arial";
+    ctx.fillText("Advance Week", L.advanceWeek.x + L.advanceWeek.w / 2, L.advanceWeek.y + 22);
   }
 
   ctx.fillStyle = "rgba(55, 65, 81, 0.9)";

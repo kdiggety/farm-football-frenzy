@@ -16,7 +16,11 @@ const PLAY_MODE_PASS_KEYS = new Set([
   "cornfieldCross",
   "siloSlant",
   "pasturePop",
-  "fencePost"
+  "fencePost",
+  "quickOut",
+  "flatPass",
+  "goRoute",
+  "checkDown"
 ]);
 
 function getCanvasCoords(e) {
@@ -102,11 +106,9 @@ function releasePassAimThrow() {
     return;
   }
   const preferred =
-    game.playModeCurrentPlay === "hayBaleHook" || game.playModeCurrentPlay === "siloSlant"
-      ? "horse"
-      : game.playModeCurrentPlay === "pasturePop"
-        ? "pete"
-        : null;
+    typeof getPreferredPassTargetForPlay === "function"
+      ? getPreferredPassTargetForPlay(game.playModeCurrentPlay)
+      : null;
   startPlayModePassThrow(tx, ty, preferred);
 }
 
@@ -232,9 +234,7 @@ function handleCanvasTap(p) {
       return;
     }
     if (hit(L.newGame)) {
-      game.franchisePickTeam = true;
-      game.teamSelectUser = null;
-      game.state = "playTeamSelect";
+      beginFranchiseCreateNew();
       return;
     }
     if (hit(L.continueGame) && loadFranchise()) {
@@ -244,7 +244,7 @@ function handleCanvasTap(p) {
       return;
     }
     if (hit(L.deleteSave) && loadFranchise()) {
-      deleteFranchiseSave();
+      beginFranchiseDeleteSave();
       return;
     }
     return;
@@ -765,11 +765,9 @@ function handleCanvasTap(p) {
     const tx = clamp(p.x, FIELD.x + ball.radius, FIELD.x + FIELD.width - ball.radius);
     const ty = clamp(p.y, FIELD.y + ball.radius, FIELD.y + FIELD.height - ball.radius);
     const preferred =
-      game.playModeCurrentPlay === "hayBaleHook" || game.playModeCurrentPlay === "siloSlant"
-        ? "horse"
-        : game.playModeCurrentPlay === "pasturePop"
-          ? "pete"
-          : null;
+      typeof getPreferredPassTargetForPlay === "function"
+        ? getPreferredPassTargetForPlay(game.playModeCurrentPlay)
+        : null;
     startPlayModePassThrow(tx, ty, preferred);
   }
 }
@@ -1259,7 +1257,10 @@ function updatePlayerInput(dt) {
     game.playModePhase === "sweep" ||
     PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay) ||
     (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
-    (game.playModeCurrentPlay === "diveLeft"  && game.playModePhase === "run")
+    (game.playModeCurrentPlay === "diveLeft" && game.playModePhase === "run") ||
+    (game.playModeCurrentPlay === "mudHoleDive" && game.playModePhase === "run") ||
+    (game.playModeCurrentPlay === "straightUp" && game.playModePhase === "run") ||
+    game.playModeCurrentPlay === "qbKeep"
   );
   const offenseP4CarrierControlled =
     isPlayMode &&
@@ -1268,6 +1269,8 @@ function updatePlayerInput(dt) {
       game.playModeCurrentPlay === "sweepRight" ||
       game.playModeCurrentPlay === "sweepLeft" ||
       (game.playModeCurrentPlay === "diveRight" && game.playModePhase === "run") ||
+      (game.playModeCurrentPlay === "mudHoleDive" && game.playModePhase === "run") ||
+      (game.playModeCurrentPlay === "straightUp" && game.playModePhase === "run") ||
       PLAY_MODE_PASS_KEYS.has(game.playModeCurrentPlay)
     );
   if (isPlayMode && ball.carrier === allyHorse) {

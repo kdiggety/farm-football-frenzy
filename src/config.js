@@ -54,9 +54,13 @@ const PASS_PLAY_KEYS = new Set([
   "cornfieldCross",
   "siloSlant",
   "pasturePop",
-  "fencePost"
+  "fencePost",
+  "quickOut",
+  "flatPass",
+  "goRoute",
+  "checkDown"
 ]);
-const RUN_PLAY_KEYS = new Set(["sweepRight", "sweepLeft", "diveRight", "diveLeft", "mudHoleDive"]);
+const RUN_PLAY_KEYS = new Set(["sweepRight", "sweepLeft", "diveRight", "diveLeft", "mudHoleDive", "straightUp", "qbKeep"]);
 const STATS_CATEGORIES = ["passing", "receiving", "rushing", "defense"];
 
 function loadGameSettings() {
@@ -309,8 +313,33 @@ const PLAY_DEFINITIONS = {
   fencePost: { category: "pass", directional: false, cpuEligible: true },
   barnDoorBoot: { category: "pass", directional: false, cpuEligible: false },
   hayBaleHook: { category: "pass", directional: false, cpuEligible: false },
-  cornfieldCross: { category: "pass", directional: false, cpuEligible: false }
+  cornfieldCross: { category: "pass", directional: false, cpuEligible: false },
+  straightUp: { category: "run", directional: false, cpuEligible: true, easy: true },
+  qbKeep: { category: "run", directional: false, cpuEligible: true, easy: true },
+  quickOut: { category: "pass", directional: false, cpuEligible: true, easy: true },
+  flatPass: { category: "pass", directional: false, cpuEligible: true, easy: true },
+  goRoute: { category: "pass", directional: false, cpuEligible: true, easy: true },
+  checkDown: { category: "pass", directional: false, cpuEligible: true, easy: true }
 };
+
+/** Six simple plays appended to every team playbook (runs + short passes). */
+const EASY_PLAYBOOK_KEYS = [
+  "straightUp",
+  "qbKeep",
+  "quickOut",
+  "flatPass",
+  "goRoute",
+  "checkDown"
+];
+
+function appendEasyPlaysToPlaybook(playbook) {
+  const merged = playbook.slice();
+  for (const key of EASY_PLAYBOOK_KEYS) {
+    if (!merged.includes(key) && PLAY_DEFINITIONS[key]) merged.push(key);
+  }
+  return merged;
+}
+
 const PLAY_CATEGORY_RUN = Object.keys(PLAY_DEFINITIONS).filter((k) => PLAY_DEFINITIONS[k].category === "run");
 const PLAY_CATEGORY_PASS = Object.keys(PLAY_DEFINITIONS).filter((k) => PLAY_DEFINITIONS[k].category === "pass");
 const PLAY_ORDER_ALL = PLAY_CATEGORY_RUN.concat(PLAY_CATEGORY_PASS);
@@ -328,7 +357,13 @@ const PLAY_SELECT_LABELS = {
   pasturePop: "Pasture Pop",
   fencePost: "Fence Post",
   mudHoleDive: "Mud Hole Dive",
-  diveRight: "Stretch"
+  diveRight: "Stretch",
+  straightUp: "Straight Up",
+  qbKeep: "QB Keep",
+  quickOut: "Quick Out",
+  flatPass: "Flat Pass",
+  goRoute: "Go Route",
+  checkDown: "Check Down"
 };
 
 const PLAY_SELECT_PANEL = { x: 40, y: 88, w: 880, h: 398 };
@@ -342,10 +377,32 @@ const PLAY_SELECT_DOWN_Y = 94;
 const PLAY_SELECT_ROW_Y = 122;
 const PLAY_SELECT_BTN_H = 118;
 
-function getFilteredPlayOrder() {
-  if (game.playModePlayFilter === "run") return PLAY_CATEGORY_RUN.slice();
-  if (game.playModePlayFilter === "pass") return PLAY_CATEGORY_PASS.slice();
+function getActiveOffenseTeamId() {
+  if (game.cpuOffense) return game.playCpuTeamId || "professorPig";
+  return game.playUserTeamId || "barnaby";
+}
+
+function getTeamPlaybookKeys(teamId) {
+  const team = typeof TEAMS !== "undefined" && teamId && TEAMS[teamId];
+  if (team && Array.isArray(team.playbook) && team.playbook.length) {
+    return team.playbook.filter((k) => PLAY_DEFINITIONS[k]);
+  }
   return PLAY_ORDER_ALL.slice();
+}
+
+function getTeamCpuEligiblePlaybookKeys(teamId) {
+  return getTeamPlaybookKeys(teamId).filter((k) => PLAY_DEFINITIONS[k]?.cpuEligible);
+}
+
+function getFilteredPlayOrder() {
+  const playbook = getTeamPlaybookKeys(getActiveOffenseTeamId());
+  if (game.playModePlayFilter === "run") {
+    return playbook.filter((k) => PLAY_DEFINITIONS[k]?.category === "run");
+  }
+  if (game.playModePlayFilter === "pass") {
+    return playbook.filter((k) => PLAY_DEFINITIONS[k]?.category === "pass");
+  }
+  return playbook.slice();
 }
 
 /** All · Run only · Pass only — top of play select panel. */
@@ -721,7 +778,7 @@ const game = {
   mouseY: 0,
   playModeDown: 1,
   playModeMaxDowns: 4,
-  playModeYardsToGo: 30,
+  playModeYardsToGo: 10,
   playModeFirstDownLineX: null,
   playModeLineX: 0,
   playModePhase: null,   // null | "snap" | "handoff" | "toss" | "sweep"

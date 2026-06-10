@@ -1237,26 +1237,22 @@ function drawScoreboard() {
 }
 
 function buildPlayResultText() {
-  const labels = {
-    sweepRight: "Sweep Right",
-    sweepLeft:  "Sweep Left",
-    passRight:  "Pass Right",
-    passLeft:   "Pass Left",
-    barnPlay:   "Barn Play",
-    scrambledEggs: "Scrambled Eggs",
-    diveRight:  "Stretch Right",
-    diveLeft:   "Stretch Left"
-  };
-  const label = labels[game.playModeLastPlayType] || "Run";
-  const rt    = game.playModeLastResultType;
-  const yds   = game.playModeLastYards;
+  const playKey = game.playModeLastPlayType;
+  const label =
+    (typeof getSessionSimPlayDisplayName === "function" && playKey
+      ? getSessionSimPlayDisplayName(playKey)
+      : null) ||
+    (typeof PLAY_SELECT_LABELS !== "undefined" && playKey ? PLAY_SELECT_LABELS[playKey] : null) ||
+    "Play";
+  const rt = game.playModeLastResultType;
+  const yds = game.playModeLastYards;
 
   if (rt === "incomplete") return { text: `${label} — Incomplete Pass`, color: "#94a3b8" };
   if (rt === "fumbleTurnover") return { text: `${label} — Fumble — turnover!`, color: "#f97316" };
   if (rt === "interception") return { text: `${label} — Interception!`, color: "#f97316" };
-  if (rt === "sack")       return { text: `${label} — Sack, ${yds} yds`, color: "#f87171" };
+  if (rt === "sack")       return { text: `${label} — Sack, ${Math.abs(yds)} yds`, color: "#f87171" };
   if (rt === "gain")       return { text: `${label} — +${yds} yard${yds !== 1 ? "s" : ""}`, color: "#4ade80" };
-  if (rt === "loss")       return { text: `${label} — ${yds} yard${yds !== -1 ? "s" : ""}`, color: "#f87171" };
+  if (rt === "loss")       return { text: `${label} — ${Math.abs(yds)} yard${Math.abs(yds) !== 1 ? "s" : ""} loss`, color: "#f87171" };
   return { text: `${label} — No gain`, color: "#fbbf24" };
 }
 
@@ -4714,12 +4710,17 @@ function drawPlaySelectOverlay() {
   ctx.fillText("Select play", canvas.width / 2, P.y + PLAY_SELECT_TITLE_Y);
   ctx.font = "14px Arial";
   ctx.fillStyle = "#d1d5db";
+  const offenseTeamId = typeof getActiveOffenseTeamId === "function" ? getActiveOffenseTeamId() : null;
+  const offenseTeamName = offenseTeamId && TEAMS[offenseTeamId] ? TEAMS[offenseTeamId].name : null;
+  if (offenseTeamName) {
+    ctx.fillText(`${offenseTeamName} playbook`, canvas.width / 2, P.y + PLAY_SELECT_TITLE_Y + 18);
+  }
   ctx.fillText(
     typeof formatPlayModeDownDistance === "function"
       ? formatPlayModeDownDistance()
       : `Down ${game.playModeDown} of ${game.playModeMaxDowns}`,
     canvas.width / 2,
-    P.y + PLAY_SELECT_DOWN_Y
+    P.y + PLAY_SELECT_DOWN_Y + (offenseTeamName ? 10 : 0)
   );
 
   const page = game.playModePlaySelectPage;

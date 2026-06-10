@@ -337,3 +337,55 @@ const PLAY_TEAM_IDS = [
 for (let i = 0; i < PLAY_TEAM_IDS.length; i += 1) {
   ensureTeamRosterFull(TEAMS[PLAY_TEAM_IDS[i]], i);
 }
+
+const CORE_TEAM_PLAYBOOKS = {
+  noFlyZone: ["passRight", "siloSlant", "pasturePop", "fencePost", "scrambledEggs", "hayBaleHook", "sweepRight"],
+  pasture: ["barnPlay", "cornfieldCross", "hayBaleHook", "passRight", "sweepRight", "diveRight"],
+  barnaby: ["mudHoleDive", "diveRight", "sweepRight", "barnPlay", "fencePost", "passRight"],
+  professorPig: ["mudHoleDive", "diveRight", "scrambledEggs", "barnDoorBoot", "passRight", "barnPlay"],
+  creekCrew: ["passRight", "barnPlay", "scrambledEggs", "siloSlant", "pasturePop", "sweepRight", "cornfieldCross"]
+};
+
+function pickPlaybookPlays(pool, count, teamIdx, salt) {
+  const picked = [];
+  for (let i = 0; i < pool.length && picked.length < count; i += 1) {
+    const key = pool[(teamIdx * (salt + 3) + i * (salt + 2)) % pool.length];
+    if (!picked.includes(key)) picked.push(key);
+  }
+  for (let i = 0; picked.length < count && i < pool.length; i += 1) {
+    const key = pool[i];
+    if (!picked.includes(key)) picked.push(key);
+  }
+  return picked;
+}
+
+function buildGeneratedTeamPlaybook(teamIdx) {
+  const runs = PLAY_CATEGORY_RUN.slice();
+  const passes = PLAY_CATEGORY_PASS.slice();
+  const totalSize = 7 + (teamIdx % 2);
+  const runCount = Math.min(runs.length, 2 + (teamIdx % 2));
+  const passCount = Math.min(passes.length, totalSize - runCount);
+  return pickPlaybookPlays(runs, runCount, teamIdx, 5)
+    .concat(pickPlaybookPlays(passes, passCount, teamIdx, 11));
+}
+
+function assignAllTeamPlaybooks() {
+  const used = new Set();
+  for (let i = 0; i < PLAY_TEAM_IDS.length; i += 1) {
+    const id = PLAY_TEAM_IDS[i];
+    let playbook = CORE_TEAM_PLAYBOOKS[id];
+    if (!playbook) {
+      let attempt = 0;
+      do {
+        playbook = buildGeneratedTeamPlaybook(i + attempt * 13);
+        attempt += 1;
+      } while (used.has(playbook.join("|")) && attempt < 24);
+    }
+    playbook = playbook.filter((k) => PLAY_DEFINITIONS[k]);
+    playbook = appendEasyPlaysToPlaybook(playbook);
+    used.add(playbook.join("|"));
+    TEAMS[id].playbook = playbook;
+  }
+}
+
+assignAllTeamPlaybooks();

@@ -71,27 +71,35 @@ function leagueScheduleShuffle(list, week) {
   return out;
 }
 
+const FRANCHISE_DIVISION_WEEK_PAIRINGS = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]]
+];
+
 function buildDivisionSeasonGames() {
   const games = [];
   let week = 1;
   for (let pass = 0; pass < 2; pass += 1) {
-    for (let pi = 0; pi < 3; pi += 1) {
-      const [aIdx, bIdx] = FRANCHISE_DIVISION_PAIRINGS[pi];
+    for (let pi = 0; pi < FRANCHISE_DIVISION_WEEK_PAIRINGS.length; pi += 1) {
+      const weekPairings = FRANCHISE_DIVISION_WEEK_PAIRINGS[pi];
       for (const div of FRANCHISE_DIVISIONS) {
         const ids = div.teamIds;
-        const home = pass === 0 ? ids[aIdx] : ids[bIdx];
-        const away = pass === 0 ? ids[bIdx] : ids[aIdx];
-        games.push({
-          week,
-          home,
-          away,
-          played: false,
-          homeScore: null,
-          awayScore: null,
-          playoff: false,
-          division: div.id,
-          conference: div.conference
-        });
+        for (const [aIdx, bIdx] of weekPairings) {
+          const home = pass === 0 ? ids[aIdx] : ids[bIdx];
+          const away = pass === 0 ? ids[bIdx] : ids[aIdx];
+          games.push({
+            week,
+            home,
+            away,
+            played: false,
+            homeScore: null,
+            awayScore: null,
+            playoff: false,
+            division: div.id,
+            conference: div.conference
+          });
+        }
       }
       week += 1;
     }
@@ -109,59 +117,165 @@ function getOtherDivisionsInConference(divisionId) {
   return FRANCHISE_DIVISIONS.filter((d) => d.conference === div.conference && d.id !== divisionId);
 }
 
+function addMutualOpponents(opponents, teamA, teamB) {
+  if (teamA === teamB || teamsSameDivision(teamA, teamB)) return;
+  opponents[teamA].add(teamB);
+  opponents[teamB].add(teamA);
+}
+
+function divisionPairKey(divA, divB) {
+  return divA < divB ? `${divA}|${divB}` : `${divB}|${divA}`;
+}
+
+function addFullDivisionMatchups(opponents, divA, divB) {
+  for (const teamA of divA.teamIds) {
+    for (const teamB of divB.teamIds) addMutualOpponents(opponents, teamA, teamB);
+  }
+}
+
+const INTRA_CONFERENCE_PAIRINGS = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]]
+];
+
+function getIntraConferencePartnerIdx(divIdx, rot) {
+  const pairings = INTRA_CONFERENCE_PAIRINGS[rot % INTRA_CONFERENCE_PAIRINGS.length];
+  for (const [a, b] of pairings) {
+    if (divIdx === a) return b;
+    if (divIdx === b) return a;
+  }
+  return (divIdx + 1) % 4;
+}
+
+function balanceNonDivisionOpponents(opponents, seasonIdx) {
+  const TARGET = 11;
+  let guard = 0;
+  while (guard < 2000) {
+    const sizes = PLAY_TEAM_IDS.map((tid) => opponents[tid].size);
+    const maxC = Math.max(...sizes);
+    const minC = Math.min(...sizes);
+    if (maxC === TARGET && minC === TARGET) break;
+
+    if (maxC > TARGET) {
+      const heavy = PLAY_TEAM_IDS.find((tid) => opponents[tid].size > TARGET);
+      const list = [...opponents[heavy]];
+      const opp = list[Math.floor(leagueHash(heavy.charCodeAt(0) + seasonIdx + guard) * list.length)];
+      opponents[heavy].delete(opp);
+      opponents[opp].delete(heavy);
+    } else if (minC < TARGET) {
+      const light = PLAY_TEAM_IDS.find((tid) => opponents[tid].size < TARGET);
+      const candidates = PLAY_TEAM_IDS.filter(
+        (tid) => tid !== light && !teamsSameDivision(light, tid) && !opponents[light].has(tid)
+      );
+      if (!candidates.length) break;
+      const opp = candidates[Math.floor(leagueHash(light.charCodeAt(0) + seasonIdx + guard) * candidates.length)];
+      addMutualOpponents(opponents, light, opp);
+    } else {
+      break;
+    }
+    guard += 1;
+  }
+}
+
 function buildNonDivisionGames(season = 1) {
-  const pending = [];
-  const rot = (Math.max(1, season | 0) - 1) % 3;
+  const seasonIdx = Math.max(1, season | 0);
+  const rot = (seasonIdx - 1) % 3;
+  const crossRot = (seasonIdx - 1) % 4;
+  const extraCrossRot = (seasonIdx - 1 + 1) % 4;
+  const opponents = {};
+  for (const id of PLAY_TEAM_IDS) opponents[id] = new Set();
+  const intraBlocks = new Set();
+  const crossBlocks = new Set();
 
-  for (const teamId of PLAY_TEAM_IDS) {
-    const div = getTeamDivision(teamId);
-    if (!div) continue;
-    const sameConfOthers = getOtherDivisionsInConference(div.id);
-    const crossConfDivs = FRANCHISE_DIVISIONS.filter((d) => d.conference !== div.conference);
-    const teamIdx = PLAY_TEAM_IDS.indexOf(teamId);
+  for (const confId of FRANCHISE_CONFERENCE_IDS) {
+    const confDivs = FRANCHISE_DIVISIONS.filter((d) => d.conference === confId);
+    const crossConfDivs = FRANCHISE_DIVISIONS.filter((d) => d.conference !== confId);
 
-    const intraDiv = sameConfOthers[rot % sameConfOthers.length];
-    if (intraDiv) {
-      for (const opp of intraDiv.teamIds) pending.push([teamId, opp]);
-    }
+    for (let divIdx = 0; divIdx < confDivs.length; divIdx += 1) {
+      const div = confDivs[divIdx];
+      const intraPartnerIdx = getIntraConferencePartnerIdx(divIdx, rot);
+      const intraTarget = confDivs[intraPartnerIdx];
+      const crossPartnerIdx = confId === "barn"
+        ? (divIdx + crossRot) % crossConfDivs.length
+        : (divIdx - crossRot + crossConfDivs.length) % crossConfDivs.length;
+      const crossTarget = crossConfDivs[crossPartnerIdx];
+      const remainingConf = confDivs.filter((_d, idx) => idx !== divIdx && idx !== intraPartnerIdx);
+      let extraCrossIdx = confId === "barn"
+        ? (divIdx + crossRot + 1 + extraCrossRot) % crossConfDivs.length
+        : (divIdx - crossRot - 1 - extraCrossRot + crossConfDivs.length * 2) % crossConfDivs.length;
+      if (extraCrossIdx === crossPartnerIdx) {
+        extraCrossIdx = (extraCrossIdx + 1) % crossConfDivs.length;
+      }
+      const extraDiv = crossConfDivs[extraCrossIdx];
 
-    const crossDiv = crossConfDivs[rot % crossConfDivs.length];
-    if (crossDiv) {
-      for (const opp of crossDiv.teamIds) pending.push([teamId, opp]);
-    }
+      if (intraTarget) {
+        const blockKey = divisionPairKey(div.id, intraTarget.id);
+        if (!intraBlocks.has(blockKey)) {
+          intraBlocks.add(blockKey);
+          addFullDivisionMatchups(opponents, div, intraTarget);
+        }
+      }
 
-    const remaining = sameConfOthers.filter((d) => d.id !== (intraDiv && intraDiv.id));
-    for (let i = 0; i < remaining.length; i += 1) {
-      const remDiv = remaining[i];
-      pending.push([teamId, remDiv.teamIds[teamIdx % remDiv.teamIds.length]]);
+      if (crossTarget) {
+        const blockKey = divisionPairKey(div.id, crossTarget.id);
+        if (!crossBlocks.has(blockKey)) {
+          crossBlocks.add(blockKey);
+          addFullDivisionMatchups(opponents, div, crossTarget);
+        }
+      }
+
+      for (let ti = 0; ti < div.teamIds.length; ti += 1) {
+        const teamId = div.teamIds[ti];
+        for (const remDiv of remainingConf) {
+          addMutualOpponents(opponents, teamId, remDiv.teamIds[ti % remDiv.teamIds.length]);
+        }
+        if (extraDiv) {
+          const extraOpp = extraDiv.teamIds[(ti + rot) % extraDiv.teamIds.length];
+          if (!opponents[teamId].has(extraOpp)) {
+            addMutualOpponents(opponents, teamId, extraOpp);
+          }
+        }
+      }
     }
   }
 
+  balanceNonDivisionOpponents(opponents, seasonIdx);
+
   const uniqueGames = [];
   const seen = new Set();
-  for (const [a, b] of pending) {
-    if (teamsSameDivision(a, b)) continue;
-    const key = franchisePairKey(a, b);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const seed = leagueHash(a.charCodeAt(0) + b.charCodeAt(0) + season * 31);
-    const home = seed < 0.5 ? a : b;
-    const away = home === a ? b : a;
-    uniqueGames.push({ home, away });
+  for (const teamId of PLAY_TEAM_IDS) {
+    for (const opp of opponents[teamId]) {
+      if (teamsSameDivision(teamId, opp)) continue;
+      const key = franchisePairKey(teamId, opp);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const seed = leagueHash(teamId.charCodeAt(0) + opp.charCodeAt(0) + seasonIdx * 31);
+      const home = seed < 0.5 ? teamId : opp;
+      const away = home === teamId ? opp : teamId;
+      uniqueGames.push({ home, away });
+    }
   }
   return uniqueGames;
 }
 
-function assignWeeksToGames(games, startWeek, endWeek) {
+function assignWeeksToGames(games, startWeek, endWeek, existingGames = []) {
   const result = [];
   const teamWeeks = {};
   for (const id of PLAY_TEAM_IDS) teamWeeks[id] = new Set();
+  for (const g of existingGames) {
+    if (!teamWeeks[g.home]) teamWeeks[g.home] = new Set();
+    if (!teamWeeks[g.away]) teamWeeks[g.away] = new Set();
+    teamWeeks[g.home].add(g.week);
+    teamWeeks[g.away].add(g.week);
+  }
 
   const unassigned = games.slice();
   let week = startWeek;
   let guard = 0;
-  while (unassigned.length && week <= endWeek + 4 && guard < 40) {
+  while (unassigned.length && week <= endWeek && guard < 80) {
     const busy = new Set();
+    let placedThisWeek = false;
     for (let i = unassigned.length - 1; i >= 0; i -= 1) {
       const g = unassigned[i];
       if (busy.has(g.home) || busy.has(g.away)) continue;
@@ -182,8 +296,51 @@ function assignWeeksToGames(games, startWeek, endWeek) {
         conference: null
       });
       unassigned.splice(i, 1);
+      placedThisWeek = true;
     }
-    week += 1;
+    if (!placedThisWeek) week += 1;
+    else if (week < endWeek) week += 1;
+    else week += 1;
+    guard += 1;
+  }
+
+  // Fallback: assign any leftover games to open weeks (weeks 7–22).
+  while (unassigned.length && guard < 400) {
+    const g = unassigned.pop();
+    let placed = false;
+    for (let w = startWeek; w <= Math.max(endWeek, 22) && !placed; w += 1) {
+      if (teamWeeks[g.home].has(w) || teamWeeks[g.away].has(w)) continue;
+      teamWeeks[g.home].add(w);
+      teamWeeks[g.away].add(w);
+      result.push({
+        week: w,
+        home: g.home,
+        away: g.away,
+        played: false,
+        homeScore: null,
+        awayScore: null,
+        playoff: false,
+        division: null,
+        conference: null
+      });
+      placed = true;
+    }
+    if (!placed) {
+      const w = Math.max(endWeek, 18) + 1;
+      teamWeeks[g.home].add(w);
+      teamWeeks[g.away].add(w);
+      result.push({
+        week: w,
+        home: g.home,
+        away: g.away,
+        played: false,
+        homeScore: null,
+        awayScore: null,
+        playoff: false,
+        division: null,
+        conference: null
+      });
+    }
     guard += 1;
   }
   return result;
@@ -196,7 +353,7 @@ function countTeamScheduleGames(schedule, teamId) {
 function buildSeasonSchedule(season = 1) {
   const divBlock = buildDivisionSeasonGames();
   const nonDiv = buildNonDivisionGames(season);
-  const cross = assignWeeksToGames(nonDiv, divBlock.nextWeek, 17);
+  const cross = assignWeeksToGames(nonDiv, divBlock.nextWeek, 17, divBlock.games);
   return divBlock.games.concat(cross);
 }
 

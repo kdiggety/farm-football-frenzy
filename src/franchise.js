@@ -144,6 +144,22 @@ function loadFranchise() {
 
 function deleteFranchiseSave() {
   localStorage.removeItem(FRANCHISE_STORAGE_KEY);
+  franchise = null;
+  game.franchiseData = null;
+  game.franchiseActive = false;
+}
+
+function beginFranchiseCreateNew() {
+  game.franchisePickTeam = true;
+  game.teamSelectUser = null;
+  game.teamSelectPage = 0;
+  game.state = "playTeamSelect";
+}
+
+function beginFranchiseDeleteSave() {
+  deleteFranchiseSave();
+  game.franchisePanel = "home";
+  game.state = "franchiseMain";
 }
 
 function syncFranchiseRostersToTeams(franchise) {
@@ -155,6 +171,18 @@ function syncFranchiseRostersToTeams(franchise) {
       if (saved.roster[slot]) TEAMS[id].roster[slot] = { ...saved.roster[slot] };
     }
   }
+}
+
+function getFranchiseRosterName(franchise, teamId, slotKey) {
+  const entry = franchise && franchise.teams[teamId] && franchise.teams[teamId].roster
+    ? franchise.teams[teamId].roster[slotKey]
+    : null;
+  if (entry && entry.displayLabel) return entry.displayLabel;
+  return getRosterSlotLabel(slotKey);
+}
+
+function formatFranchiseScheduleScore(us, them) {
+  return `${us}-${them}`;
 }
 
 function getFranchiseTeamRating(teamState) {
@@ -199,43 +227,135 @@ function formatGameScoreLine(homeScore, awayScore, homeTDs, awayTDs, homeFGs, aw
   return `${homeScore}-${awayScore} (${htd}-${atd} TD, ${hfg}-${afg} FG)`;
 }
 
-function synthesizeTeamStatsFromScore(points) {
-  const { tds, fgs } = decomposeScoreToTouchdownsAndFieldGoals(points);
-  const stats = createEmptyTeamStats();
-  const passTDs = Math.max(0, Math.floor(tds * 0.55 + (Math.random() < 0.25 ? 1 : 0)));
-  const rushTDs = Math.max(0, tds - passTDs);
-  stats.passing.td = passTDs;
-  stats.rushing.td = rushTDs;
-  stats.passing.att = 24 + tds * 3 + fgs + Math.floor(Math.random() * 10);
-  stats.passing.comp = Math.max(0, Math.floor(stats.passing.att * (0.56 + Math.random() * 0.18)));
-  stats.passing.yards = 140 + passTDs * 58 + fgs * 12 + Math.floor(Math.random() * 90);
-  stats.passing.int = Math.random() < 0.22 ? 1 : 0;
-  stats.rushing.att = 18 + rushTDs * 4 + Math.floor(Math.random() * 10);
-  stats.rushing.yards = 70 + rushTDs * 22 + Math.floor(Math.random() * 55);
-  stats.defense.tackles = 28 + Math.floor(Math.random() * 24);
-  stats.defense.sacks = Math.floor(Math.random() * 4);
-  stats.defense.int = Math.random() < 0.18 ? 1 : 0;
-  stats.defense.tfl = Math.floor(Math.random() * 5);
-  if (passTDs > 0) {
-    stats.receiving.horse.td = Math.min(passTDs, 1 + Math.floor(Math.random() * passTDs));
-    const left = passTDs - stats.receiving.horse.td;
-    if (left > 0) stats.receiving.pete.td = Math.min(left, Math.floor(Math.random() * (left + 1)));
-    const left2 = passTDs - stats.receiving.horse.td - stats.receiving.pete.td;
-    if (left2 > 0) stats.receiving.p4.td = left2;
-    stats.receiving.horse.yards = Math.floor(stats.passing.yards * 0.42);
-    stats.receiving.pete.yards = Math.floor(stats.passing.yards * 0.28);
-    stats.receiving.p4.yards = Math.floor(stats.passing.yards * 0.18);
-    stats.receiving.horse.rec = 3 + stats.receiving.horse.td * 2;
-    stats.receiving.pete.rec = 2 + stats.receiving.pete.td * 2;
-    stats.receiving.p4.rec = 1 + stats.receiving.p4.td;
+function synthStatRand(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function synthStatClamp(value, min, max) {
+  return Math.max(min, Math.min(max, value | 0));
+}
+
+function distributeSynthReceivingStats(stats, passTDs) {
+  const passYards = stats.passing.yards;
+  if (passYards <= 0 && passTDs <= 0) return;
+
+  const horseShare = 0.38 + Math.random() * 0.12;
+  const peteShare = 0.24 + Math.random() * 0.1;
+  let p4Share = 0.14 + Math.random() * 0.08;
+  let used = horseShare + peteShare + p4Share;
+  if (used > 0.92) {
+    p4Share *= 0.85 / used;
   }
+
+  stats.receiving.horse.yards = Math.round(passYards * horseShare);
+  stats.receiving.pete.yards = Math.round(passYards * peteShare);
+  stats.receiving.p4.yards = Math.max(0, passYards - stats.receiving.horse.yards - stats.receiving.pete.yards);
+
+  const completions = stats.passing.comp;
+  stats.receiving.horse.rec = synthStatClamp(
+    Math.round(completions * (0.32 + Math.random() * 0.1)) + (passTDs > 0 ? 1 : 0),
+    passTDs > 0 ? 2 : 0,
+    completions
+  );
+  const peteRecCap = Math.max(0, completions - stats.receiving.horse.rec);
+  stats.receiving.pete.rec = synthStatClamp(
+    Math.round(completions * (0.22 + Math.random() * 0.08)),
+    passTDs > 0 ? 1 : 0,
+    peteRecCap
+  );
+  stats.receiving.p4.rec = Math.max(0, completions - stats.receiving.horse.rec - stats.receiving.pete.rec);
+
+  let tdLeft = passTDs;
+  if (tdLeft > 0) {
+    stats.receiving.horse.td = synthStatClamp(
+      Math.min(tdLeft, 1 + (Math.random() < 0.55 ? 1 : 0)),
+      0,
+      tdLeft
+    );
+    tdLeft -= stats.receiving.horse.td;
+  }
+  if (tdLeft > 0) {
+    stats.receiving.pete.td = synthStatClamp(
+      Math.min(tdLeft, Math.random() < 0.65 ? 1 : 0),
+      0,
+      tdLeft
+    );
+    tdLeft -= stats.receiving.pete.td;
+  }
+  stats.receiving.p4.td = tdLeft;
+}
+
+function synthesizeTeamStatsFromScore(points, breakdown, opponentPoints) {
+  const decomposed = decomposeScoreToTouchdownsAndFieldGoals(points);
+  const tds = breakdown && breakdown.tds != null ? breakdown.tds : decomposed.tds;
+  const fgs = breakdown && breakdown.fgs != null ? breakdown.fgs : decomposed.fgs;
+  const stats = createEmptyTeamStats();
+
+  let passTDs = breakdown && breakdown.passTDs != null ? breakdown.passTDs : null;
+  let rushTDs = breakdown && breakdown.rushTDs != null ? breakdown.rushTDs : null;
+  if (passTDs == null || rushTDs == null) {
+    if (tds === 0) {
+      passTDs = 0;
+      rushTDs = 0;
+    } else if (tds === 1) {
+      passTDs = Math.random() < 0.62 ? 1 : 0;
+      rushTDs = 1 - passTDs;
+    } else {
+      passTDs = synthStatClamp(Math.round(tds * (0.58 + (Math.random() - 0.5) * 0.18)), 0, tds);
+      rushTDs = tds - passTDs;
+    }
+  }
+
+  const scoringPace = tds + fgs * 0.45;
+  const offenseFactor = synthStatClamp(0.86 + points / 42, 0.86, 1.1);
+  stats.passing.att = synthStatClamp(Math.round((30 + scoringPace * 1.8 + synthStatRand(-3, 5)) * offenseFactor), 22, 46);
+  const compPct = 0.6 + Math.random() * 0.1;
+  stats.passing.comp = synthStatClamp(
+    Math.round(stats.passing.att * compPct) + synthStatRand(-1, 2),
+    0,
+    stats.passing.att
+  );
+  const yardsPerComp = 9.4 + Math.random() * 2.0;
+  stats.passing.yards = synthStatClamp(
+    Math.round((stats.passing.comp * yardsPerComp + passTDs * synthStatRand(4, 14) + fgs * synthStatRand(2, 7)) * offenseFactor),
+    Math.max(85, stats.passing.comp * 5),
+    395
+  );
+  stats.passing.td = passTDs;
+  stats.passing.int = Math.random() < 0.28 + passTDs * 0.04 ? 1 : (Math.random() < 0.04 ? 2 : 0);
+  stats.passing.sacks = synthStatRand(1, 4);
+
+  stats.rushing.att = synthStatClamp(Math.round((26 + rushTDs * 1.2 + synthStatRand(-4, 4)) * offenseFactor), 16, 36);
+  const yardsPerRush = 3.9 + Math.random() * 1.6;
+  stats.rushing.yards = synthStatClamp(
+    Math.round((stats.rushing.att * yardsPerRush + rushTDs * synthStatRand(4, 12)) * offenseFactor),
+    Math.max(35, stats.rushing.att * 2),
+    195
+  );
+  stats.rushing.td = rushTDs;
+
+  distributeSynthReceivingStats(stats, passTDs);
+
+  const oppPts = opponentPoints != null ? opponentPoints : 21;
+  stats.defense.tackles = synthStatClamp(54 + Math.round((22 - oppPts) * 0.7) + synthStatRand(-5, 6), 42, 74);
+  stats.defense.sacks = synthStatClamp(Math.round((22 - oppPts) / 6 + Math.random() * 2.2), 0, 6);
+  stats.defense.int = Math.random() < 0.1 + Math.max(0, 24 - oppPts) * 0.012 ? 1 : 0;
+  stats.defense.tfl = synthStatClamp(5 + synthStatRand(0, 4) + Math.round((22 - oppPts) * 0.08), 2, 11);
+
   return stats;
 }
 
-function mergeSynthStatsIntoSeason(franchise, homeTeamId, awayTeamId, homeScore, awayScore) {
+function mergeSynthStatsIntoSeason(franchise, homeTeamId, awayTeamId, homeScore, awayScore, scoreMeta) {
   if (!franchise.seasonStats) franchise.seasonStats = createEmptyFranchiseSeasonStats();
-  const homeStats = synthesizeTeamStatsFromScore(homeScore);
-  const awayStats = synthesizeTeamStatsFromScore(awayScore);
+  const meta = scoreMeta || {};
+  const homeStats = synthesizeTeamStatsFromScore(homeScore, {
+    tds: meta.homeTDs,
+    fgs: meta.homeFGs
+  }, awayScore);
+  const awayStats = synthesizeTeamStatsFromScore(awayScore, {
+    tds: meta.awayTDs,
+    fgs: meta.awayFGs
+  }, homeScore);
   const wrap = { user: homeStats, cpu: awayStats };
   mergeGameStatsIntoSeason(franchise, wrap, homeTeamId, awayTeamId, true);
 }
@@ -245,10 +365,10 @@ function simulateFranchiseGameScore(homeState, awayState, homeFieldBonus = 3) {
   const awayR = getFranchiseTeamRating(awayState);
   const edge = (homeR - awayR) / 18;
 
-  const homeTDs = Math.max(0, Math.round(1.4 + edge * 0.75 + (Math.random() - 0.35) * 2.2));
-  const awayTDs = Math.max(0, Math.round(1.4 - edge * 0.75 + (Math.random() - 0.35) * 2.2));
-  const homeFGs = Math.floor(Math.random() * 3) + (Math.random() < 0.35 ? 1 : 0);
-  const awayFGs = Math.floor(Math.random() * 3) + (Math.random() < 0.35 ? 1 : 0);
+  let homeTDs = Math.max(0, Math.round(2.0 + edge * 0.75 + (Math.random() - 0.35) * 2.4));
+  let awayTDs = Math.max(0, Math.round(2.0 - edge * 0.75 + (Math.random() - 0.35) * 2.4));
+  let homeFGs = Math.floor(Math.random() * 3) + (Math.random() < 0.35 ? 1 : 0);
+  let awayFGs = Math.floor(Math.random() * 3) + (Math.random() < 0.35 ? 1 : 0);
 
   let homeScore = homeTDs * 7 + homeFGs * 3;
   let awayScore = awayTDs * 7 + awayFGs * 3;
@@ -300,7 +420,12 @@ function recordFranchiseGameResult(franchise, game, homeScore, awayScore, opts) 
   if (options.liveStats) {
     mergeGameStatsIntoSeason(franchise, options.liveStats, options.userTeamId, options.cpuTeamId, options.userWasHome);
   } else if (!options.skipStats) {
-    mergeSynthStatsIntoSeason(franchise, game.home, game.away, homeScore, awayScore);
+    mergeSynthStatsIntoSeason(franchise, game.home, game.away, homeScore, awayScore, {
+      homeTDs: game.homeTDs,
+      homeFGs: game.homeFGs,
+      awayTDs: game.awayTDs,
+      awayFGs: game.awayFGs
+    });
   }
 }
 
@@ -562,33 +687,45 @@ function forceCompleteCurrentFranchiseWeek(franchise) {
 }
 
 function simFranchiseToWeek(franchise, targetWeek) {
+  if (!franchise || franchise.phase !== "regular") return;
   const target = Math.min(Math.max(1, targetWeek | 0), FRANCHISE_REGULAR_WEEKS);
   let guard = 0;
-  while (franchise.phase === "regular" && franchise.week < target && guard < 30) {
+  while (franchise.week < target && guard < 40) {
     forceCompleteCurrentFranchiseWeek(franchise);
     if (!advanceFranchiseWeek(franchise)) {
-      if (franchise.week >= FRANCHISE_REGULAR_WEEKS) break;
-      franchise.week += 1;
+      const unplayed = franchise.schedule.filter((g) => g.week === franchise.week && !g.played);
+      if (unplayed.length > 0) {
+        for (const g of unplayed) {
+          const scores = simulateFranchiseGameScore(franchise.teams[g.home], franchise.teams[g.away]);
+          applySimulatedGameResult(franchise, g, scores);
+        }
+        advanceFranchiseWeek(franchise);
+      } else if (franchise.week < FRANCHISE_REGULAR_WEEKS) {
+        franchise.week += 1;
+      } else {
+        break;
+      }
     }
     guard += 1;
+  }
+  if (franchise.week === target) {
+    forceCompleteCurrentFranchiseWeek(franchise);
   }
   saveFranchise(franchise);
   syncFranchiseRostersToTeams(franchise);
 }
 
 function simFranchiseCompleteRegularSeason(franchise) {
-  simFranchiseToWeek(franchise, FRANCHISE_REGULAR_WEEKS);
-  let guard = 0;
-  while (franchise.phase === "regular" && guard < 6) {
-    forceCompleteCurrentFranchiseWeek(franchise);
-    if (!advanceFranchiseWeek(franchise)) {
-      if (franchise.week >= FRANCHISE_REGULAR_WEEKS) {
-        beginFranchisePlayoffs(franchise);
-        break;
-      }
-      franchise.week += 1;
-    }
-    guard += 1;
+  if (!franchise || franchise.phase !== "regular") return;
+  for (const g of franchise.schedule) {
+    if (g.played) continue;
+    const scores = simulateFranchiseGameScore(franchise.teams[g.home], franchise.teams[g.away]);
+    applySimulatedGameResult(franchise, g, scores);
+    if (typeof runCpuFranchiseTrade === "function") runCpuFranchiseTrade(franchise);
+  }
+  if (franchise.phase === "regular") {
+    franchise.week = FRANCHISE_REGULAR_WEEKS;
+    beginFranchisePlayoffs(franchise);
   }
   saveFranchise(franchise);
   syncFranchiseRostersToTeams(franchise);
@@ -816,6 +953,7 @@ function computeSeasonAwards(franchise) {
   }
   let passLeader = null;
   let rushLeader = null;
+  let recvLeader = null;
   let tdLeader = null;
   for (const id of PLAY_TEAM_IDS) {
     const st = franchise.seasonStats && franchise.seasonStats[id];
@@ -830,7 +968,20 @@ function computeSeasonAwards(franchise) {
       rushLeader = { teamId: id, yards: st.rushing.yards, td: rushTDs };
     }
     if (!tdLeader || totalTD > tdLeader.td) {
-      tdLeader = { teamId: id, td: totalTD };
+      tdLeader = { teamId: id, td: totalTD, passTD: passTDs, rushTD: rushTDs };
+    }
+    const recvSlots = [
+      { slot: "wr", key: "horse" },
+      { slot: "flex", key: "pete" },
+      { slot: "p4", key: "p4" }
+    ];
+    for (const { slot, key } of recvSlots) {
+      const row = st.receiving && st.receiving[key];
+      if (!row) continue;
+      const yards = row.yards || 0;
+      if (!recvLeader || yards > recvLeader.yards) {
+        recvLeader = { teamId: id, slot, yards, td: row.td || 0, rec: row.rec || 0 };
+      }
     }
   }
   if (passLeader) {
@@ -838,6 +989,7 @@ function computeSeasonAwards(franchise) {
       id: "passLeader",
       title: "Passing Leader",
       teamId: passLeader.teamId,
+      playerName: getFranchiseRosterName(franchise, passLeader.teamId, "qb"),
       detail: `${passLeader.yards} yds · ${passLeader.td} TD`
     });
   }
@@ -846,23 +998,39 @@ function computeSeasonAwards(franchise) {
       id: "rushLeader",
       title: "Rushing Leader",
       teamId: rushLeader.teamId,
+      playerName: getFranchiseRosterName(franchise, rushLeader.teamId, "p4"),
       detail: `${rushLeader.yards} yds · ${rushLeader.td} TD`
     });
   }
+  if (recvLeader) {
+    awards.push({
+      id: "recvLeader",
+      title: "Receiving Leader",
+      teamId: recvLeader.teamId,
+      playerName: getFranchiseRosterName(franchise, recvLeader.teamId, recvLeader.slot),
+      detail: `${recvLeader.rec} rec · ${recvLeader.yards} yds · ${recvLeader.td} TD`
+    });
+  }
   if (tdLeader) {
+    const qbName = getFranchiseRosterName(franchise, tdLeader.teamId, "qb");
+    const rbName = getFranchiseRosterName(franchise, tdLeader.teamId, "p4");
     awards.push({
       id: "tdLeader",
-      title: "Most Touchdowns",
+      title: "Most Touchdowns (Team)",
       teamId: tdLeader.teamId,
-      detail: `${tdLeader.td} total TD`
+      playerName: `${qbName} / ${rbName}`,
+      detail: `${tdLeader.td} total (${tdLeader.passTD} pass · ${tdLeader.rushTD} rush)`
     });
   }
   const userSt = franchise.seasonStats && franchise.seasonStats[franchise.userTeamId];
   if (userSt) {
+    const qbName = getFranchiseRosterName(franchise, franchise.userTeamId, "qb");
+    const rbName = getFranchiseRosterName(franchise, franchise.userTeamId, "p4");
     awards.push({
       id: "userTeam",
       title: "Your Offense",
       teamId: franchise.userTeamId,
+      playerName: `${qbName} · ${rbName}`,
       detail: `${userSt.passing.td + userSt.rushing.td} TD · ${userSt.passing.yards + userSt.rushing.yards} yds`
     });
   }
@@ -921,6 +1089,8 @@ function getFranchiseHubLayout() {
     play: { x: cx - 140, y: 418, w: 280, h: 46 },
     advanceWeek: { x: 24, y: 474, w: 140, h: 32 },
     simTo: { x: 180, y: 474, w: 100, h: 32 },
+    createNew: { x: canvas.width - 332, y: 474, w: 148, h: 32 },
+    deleteFranchise: { x: canvas.width - 176, y: 474, w: 156, h: 32 },
     home: { x: 24, y: tabY, w: 64, h: tabH },
     roster: { x: 94, y: tabY, w: 64, h: tabH },
     schedule: { x: 164, y: tabY, w: 72, h: tabH },
@@ -937,11 +1107,13 @@ function getFranchiseHubLayout() {
 
 function getFranchiseMainLayout() {
   const cx = canvas.width / 2;
+  const btnW = 200;
+  const gap = 16;
   return {
     back: { x: 20, y: 14, w: 100, h: 30 },
-    newGame: { x: cx - 150, y: 260, w: 300, h: 48 },
-    continueGame: { x: cx - 150, y: 320, w: 300, h: 48 },
-    deleteSave: { x: cx - 100, y: 400, w: 200, h: 36 }
+    continueGame: { x: cx - 150, y: 196, w: 300, h: 48 },
+    newGame: { x: cx - btnW - gap / 2, y: 268, w: btnW, h: 48 },
+    deleteSave: { x: cx + gap / 2, y: 268, w: btnW, h: 48 }
   };
 }
 
@@ -965,6 +1137,7 @@ function getFranchiseSimToLayout() {
   });
   return {
     cancel: { x: cx - 60, y: panel.y + panel.h - 44, w: 120, h: 34 },
+    advanceWeek: { x: panel.x + 16, y: panel.y + panel.h - 44, w: 140, h: 34 },
     buttons
   };
 }
@@ -982,6 +1155,24 @@ function getActiveFranchise() {
   return franchise || game.franchiseData || loadFranchise();
 }
 
+function handleFranchiseAdvanceWeek(f) {
+  if (!f || (f.phase !== "regular" && f.phase !== "playoffs")) return;
+  forceCompleteCurrentFranchiseWeek(f);
+  const advanced = advanceFranchiseWeek(f);
+  saveFranchise(f);
+  if (advanced) {
+    if (f.phase === "playoffs") {
+      f.hubMessage = typeof getPlayoffRoundLabel === "function"
+        ? `Playoffs — ${getPlayoffRoundLabel(f.playoffRound, null)}`
+        : "Playoff round advanced.";
+    } else {
+      f.hubMessage = `Week ${f.week} is ready.`;
+    }
+  } else {
+    f.hubMessage = "Simmed this week's CPU games. Play your game or advance again.";
+  }
+}
+
 function handleFranchiseHubClick(p) {
   const f = getActiveFranchise();
   if (!f) return;
@@ -990,6 +1181,14 @@ function handleFranchiseHubClick(p) {
 
   if (hit(L.back)) {
     game.state = "franchiseMain";
+    return;
+  }
+  if (hit(L.createNew)) {
+    beginFranchiseCreateNew();
+    return;
+  }
+  if (hit(L.deleteFranchise)) {
+    beginFranchiseDeleteSave();
     return;
   }
   if (hit(L.home)) { game.franchisePanel = "home"; return; }
@@ -1005,6 +1204,18 @@ function handleFranchiseHubClick(p) {
     game.franchiseTradeWant = null;
     return;
   }
+  if (hit(L.simTo)) {
+    game.franchisePanel = "simTo";
+    return;
+  }
+  if ((f.phase === "regular" || f.phase === "playoffs") && hit(L.advanceWeek)) {
+    handleFranchiseAdvanceWeek(f);
+    return;
+  }
+  if ((f.phase === "regular" || f.phase === "playoffs") && hit(L.play) && getUserGameThisWeek(f)) {
+    openFranchisePlaySelect();
+    return;
+  }
   const panel = resolveFranchisePanel(f);
   if (panel === "simTo") {
     handleFranchiseSimToClick(p, f);
@@ -1012,10 +1223,6 @@ function handleFranchiseHubClick(p) {
   }
   if (panel === "trade") {
     handleFranchiseTradeClick(p, f);
-    return;
-  }
-  if (hit(L.simTo)) {
-    game.franchisePanel = "simTo";
     return;
   }
   if (panel === "draft") {
@@ -1026,17 +1233,6 @@ function handleFranchiseHubClick(p) {
     handleFranchiseFreeAgencyClick(p, f);
     return;
   }
-  if (hit(L.play) && getUserGameThisWeek(f)) {
-    openFranchisePlaySelect();
-    return;
-  }
-  if (hit(L.advanceWeek)) {
-    forceCompleteCurrentFranchiseWeek(f);
-    advanceFranchiseWeek(f);
-    saveFranchise(f);
-    f.hubMessage = "Week advanced.";
-    return;
-  }
 }
 
 function handleFranchiseSimToClick(p, f) {
@@ -1044,6 +1240,10 @@ function handleFranchiseSimToClick(p, f) {
   const hit = (r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
   if (hit(L.cancel)) {
     game.franchisePanel = "home";
+    return;
+  }
+  if ((f.phase === "regular" || f.phase === "playoffs") && hit(L.advanceWeek)) {
+    handleFranchiseAdvanceWeek(f);
     return;
   }
   for (const m of FRANCHISE_SIM_MILESTONES) {

@@ -92,6 +92,14 @@ function recordTouchdownStats(scorer, playKey) {
   const yards = Math.max(0, getPlayModeYardsGained(scorer.x));
 
   if (isPassPlayKey(playKey)) {
+    const qbScrambleTd = scorer === player1 && !game.passAttemptPending;
+    if (qbScrambleTd) {
+      off.rushing.att += 1;
+      off.rushing.yards += yards;
+      off.rushing.td += 1;
+      game.runAttemptPending = false;
+      return;
+    }
     if (game.passAttemptPending) {
       off.passing.att += 1;
       off.passing.comp += 1;

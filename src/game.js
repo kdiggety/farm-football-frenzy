@@ -281,15 +281,32 @@ function shouldUseFieldCameraFollow() {
   return game.mode === "play" && isFieldCameraFollowState(game.state);
 }
 
+function getFieldCameraFocusX() {
+  const followBallCarrierStates = new Set([
+    "playing",
+    "kickoffPlay",
+    "playModeDowned",
+    "instantReplay"
+  ]);
+
+  if (followBallCarrierStates.has(game.state)) {
+    if (ball.inFlight) return ball.x;
+    if (ball.carrier) return ball.carrier.x;
+  }
+
+  if (game.playModeLineX != null) return game.playModeLineX;
+  if (ball.inFlight) return ball.x;
+  if (ball.carrier) return ball.carrier.x;
+  return player1.x;
+}
+
 function getFieldCameraScrollX() {
   if (!fieldExceedsViewport()) return 0;
   const maxScroll = Math.max(0, FIELD.x + FIELD.width - canvas.width);
   if (!shouldUseFieldCameraFollow()) {
     return clamp((FIELD.x + FIELD.width - canvas.width) / 2, 0, maxScroll);
   }
-  let focus = player1.x;
-  if (game.playModeLineX != null) focus = game.playModeLineX;
-  else if (ball.inFlight || ball.carrier) focus = ball.x;
+  const focus = getFieldCameraFocusX();
   return clamp(focus - canvas.width * 0.42, 0, maxScroll);
 }
 
@@ -301,7 +318,7 @@ function pointerToFieldCoords(p) {
   if (!fieldExceedsViewport() || !shouldUseFieldCameraFollow()) return p;
   return { x: screenXToFieldX(p.x), y: p.y };
 }
-const FIRST_DOWN_YARDS = 30;
+const FIRST_DOWN_YARDS = 10;
 
 /** Sweep: both WRs on the bottom sideline, split vertically while on the LOS. */
 const SWEEP_WR_PAIR_GAP_YARDS = 10;
@@ -420,7 +437,11 @@ const PASS_PLAYS_THIRD_RECEIVER = new Set([
   "scrambledEggs",
   "siloSlant",
   "pasturePop",
-  "fencePost"
+  "fencePost",
+  "quickOut",
+  "flatPass",
+  "goRoute",
+  "checkDown"
 ]);
 const PASS_COVER_CUSHION_YARDS = 2.2;
 const PASS_COVER_DELAY_TRAIL_SPEED = 0.78;
@@ -1387,7 +1408,13 @@ function getSessionSimPlayDisplayName(playKey) {
     siloSlant: "Silo Slant",
     pasturePop: "Pasture Pop",
     fencePost: "Fence Post",
-    mudHoleDive: "Mud Hole Dive"
+    mudHoleDive: "Mud Hole Dive",
+    straightUp: "Straight Up",
+    qbKeep: "QB Keep",
+    quickOut: "Quick Out",
+    flatPass: "Flat Pass",
+    goRoute: "Go Route",
+    checkDown: "Check Down"
   };
   return staticLabels[playKey] || PLAY_SELECT_LABELS[playKey] || playKey;
 }
@@ -1976,6 +2003,47 @@ function getOffenseDirection() {
   return cpuHasBall ? -userDir : userDir;
 }
 
+function getPreferredPassTargetForPlay(playKey) {
+  switch (playKey) {
+    case "passRight":
+    case "passLeft":
+    case "fencePost":
+    case "barnPlay":
+    case "cornfieldCross":
+    case "hayBaleHook":
+    case "siloSlant":
+    case "quickOut":
+    case "goRoute":
+      return "horse";
+    case "scrambledEggs":
+    case "barnDoorBoot":
+    case "pasturePop":
+    case "flatPass":
+      return "pete";
+    case "checkDown":
+      return "p4";
+    default:
+      return null;
+  }
+}
+
+/** Trips geometry key for passRight/passLeft/fencePost (direction-aware for fence post). */
+function getTripsPassPlayKey(playKey) {
+  if (playKey === "passLeft") return "passLeft";
+  if (playKey === "passRight") return "passRight";
+  if (playKey === "fencePost") return getOffenseDirection() > 0 ? "passRight" : "passLeft";
+  return playKey;
+}
+
+/** QB scramble or boot roll into the end zone — not a passing TD. */
+function resolveQbCarrierTouchdownIfNeeded() {
+  if (ball.carrier !== player1 || ball.inFlight || !hasOffenseScored(player1)) return false;
+  if (game.passPlayCanThrow && !hasCrossedLineOfScrimmage(player1.x)) return false;
+  if (game.passPlayCanThrow) markQbScramblePastLine();
+  finishDriveTouchdown(player1);
+  return true;
+}
+
 /** Signed yards gained toward the offense's end zone (positive = forward). */
 function getPlayModeYardsGained(spotX, lineX = game.playModeLineX) {
   return Math.round((spotX - lineX) / YARDS_TO_PIXELS * getOffenseDirection());
@@ -2084,6 +2152,7 @@ function markQbScramblePastLine() {
   if (game.passPlayCanThrow) {
     game.passPlayCanThrow = false;
     game.passCenterBlockMs = 0;
+    if (typeof markRunAttemptStarted === "function") markRunAttemptStarted();
   }
 }
 
@@ -2109,7 +2178,7 @@ function moveOffenseX(entity, dt, speedMultiplier = 1) {
     game.defensePressJam &&
     game.passJamWindowMs > 0 &&
     isPassPlay &&
-    (entity === allyHorse || entity === lilTunnelPete)
+    (entity === allyHorse || entity === lilTunnelPete || entity === offenseP4)
   ) {
     const jamDef = getJamDefenderForReceiver(entity);
     const nearLine = Math.abs(entity.x - game.playModeLineX) <= 7 * YARDS_TO_PIXELS;
@@ -2218,6 +2287,54 @@ const PASS_PLAY_TUNING = {
     throwJitterMs: 260,
     completionChance: 0.68,
     targetOffset: { horse: { x: 40, y: 0 }, pete: { x: 20, y: 0 }, p4: { x: 16, y: 14 } }
+  },
+  quickOut: {
+    primaryRead: "horse",
+    primaryWeight: 0.72,
+    throwMinMs: 280,
+    throwJitterMs: 160,
+    completionChance: 0.82,
+    targetOffset: { horse: { x: 10, y: 8 }, pete: { x: 8, y: 0 }, p4: { x: 4, y: 0 } }
+  },
+  flatPass: {
+    primaryRead: "pete",
+    primaryWeight: 0.74,
+    throwMinMs: 260,
+    throwJitterMs: 140,
+    completionChance: 0.84,
+    targetOffset: { horse: { x: 14, y: 0 }, pete: { x: 5, y: 0 }, p4: { x: 3, y: 0 } }
+  },
+  goRoute: {
+    primaryRead: "horse",
+    primaryWeight: 0.7,
+    throwMinMs: 320,
+    throwJitterMs: 180,
+    completionChance: 0.68,
+    targetOffset: { horse: { x: 16, y: 0 }, pete: { x: 8, y: 0 }, p4: { x: 5, y: 0 } }
+  },
+  checkDown: {
+    primaryRead: "p4",
+    primaryWeight: 0.76,
+    throwMinMs: 240,
+    throwJitterMs: 120,
+    completionChance: 0.86,
+    targetOffset: { horse: { x: 10, y: 0 }, pete: { x: 10, y: 0 }, p4: { x: 4, y: 6 } }
+  },
+  cornfieldCross: {
+    primaryRead: "horse",
+    primaryWeight: 0.55,
+    throwMinMs: 480,
+    throwJitterMs: 270,
+    completionChance: 0.69,
+    targetOffset: { horse: { x: 31, y: 0 }, pete: { x: 31, y: 0 }, p4: { x: 14, y: 0 } }
+  },
+  barnDoorBoot: {
+    primaryRead: "pete",
+    primaryWeight: 0.6,
+    throwMinMs: 520,
+    throwJitterMs: 280,
+    completionChance: 0.67,
+    targetOffset: { horse: { x: 3, y: 0 }, pete: { x: 24, y: 0 }, p4: { x: 12, y: 0 } }
   }
 };
 
@@ -2274,7 +2391,8 @@ function isShotgunCenterSnapPlay() {
     game.playModeCurrentPlay === "scrambledEggs" ||
     game.playModeCurrentPlay === "cornfieldCross" ||
     game.playModeCurrentPlay === "siloSlant" ||
-    game.playModeCurrentPlay === "pasturePop";
+    game.playModeCurrentPlay === "pasturePop" ||
+    isEasyPassPlay(game.playModeCurrentPlay);
 }
 
 function getStretchPlayRunLaneY() {
@@ -2289,6 +2407,7 @@ function updateShotgunCenterSnapPhase(dt, duringSnapCallback) {
   if (!isShotgunCenterSnapPlay() || ball.carrier !== offenseP5 || ball.inFlight) {
     return false;
   }
+  tickPassRouteProgress(dt);
   game.playModePassSnapMs -= dt * 1000;
   snapOffenseToLineOfScrimmage(offenseP5, game.playModeLineX);
   if (duringSnapCallback) {
@@ -3530,7 +3649,7 @@ function chooseDefenseModeCpuPlay() {
   if (game.defenseModeSelectedOffensePlay && game.defenseModeSelectedOffensePlay !== "random") {
     return resolvePlayKeyForSelectedSide(game.defenseModeSelectedOffensePlay);
   }
-  const cpuEligiblePlays = PLAY_ORDER_ALL.filter((k) => PLAY_DEFINITIONS[k] && PLAY_DEFINITIONS[k].cpuEligible);
+  const cpuEligiblePlays = getTeamCpuEligiblePlaybookKeys(game.playCpuTeamId || "professorPig");
   const runPlays = cpuEligiblePlays.filter((k) => PLAY_DEFINITIONS[k].category === "run")
     .map((k) => resolvePlayKeyForSelectedSide(k));
   const passPlays = cpuEligiblePlays.filter((k) => PLAY_DEFINITIONS[k].category === "pass")
@@ -3596,7 +3715,7 @@ function getCpuPassCompletionChance(playKey, targetKey) {
 }
 
 function cycleDefenseModeOffensePlay() {
-  const order = ["random"].concat(PLAY_ORDER_ALL.filter((k) => PLAY_DEFINITIONS[k] && PLAY_DEFINITIONS[k].cpuEligible));
+  const order = ["random"].concat(getTeamCpuEligiblePlaybookKeys(game.playCpuTeamId || "professorPig"));
   const idx = order.indexOf(game.defenseModeSelectedOffensePlay);
   game.defenseModeSelectedOffensePlay = order[(idx + 1 + order.length) % order.length];
 }
@@ -3903,7 +4022,7 @@ function moveTripsOutsideSevenPost(dt, adjustTarget = null, toTop = false) {
     moveToward(allyHorse, ball.targetX, ball.targetY, allyHorse.speed, dt);
   } else if (hasNotReachedForwardX(allyHorse.x, stemX)) {
     moveToward(allyHorse, stemX, allyHorse.y, allyHorse.speed, dt);
-  } else if (hasNotReachedForwardX(allyHorse.x, cornerX)) {
+  } else if (distance(allyHorse.x, allyHorse.y, cornerX, cornerY) > 14) {
     moveToward(allyHorse, cornerX, cornerY, allyHorse.speed, dt);
   } else {
     runReceiverToLandmarkOrContinue(allyHorse, postX, postY, allyHorse.speed, dt);
@@ -3953,8 +4072,7 @@ function moveTripsSlotCurlRoute(dt, adjustTarget = null) {
   if (!game.tripsSlotCurlState) {
     game.tripsSlotCurlState = { phase: "stem" };
   }
-  const tripsRouteKey =
-    game.playModeCurrentPlay === "fencePost" ? "passRight" : game.playModeCurrentPlay;
+  const tripsRouteKey = getTripsPassPlayKey(game.playModeCurrentPlay);
   moveReceiverCurlRoute(
     lilTunnelPete,
     getTripsSlotCurlGeometry(tripsRouteKey),
@@ -4034,7 +4152,7 @@ function startBarnDoorBootPlay() {
   game.barnDoorBootArcT = 0;
   game.barnDoorBootLateralFlip = 1;
   positionForBarnDoorBoot();
-  prepareDefenseModeCpuPass("passLeft");
+  prepareDefenseModeCpuPass("barnDoorBoot");
 }
 
 function positionForHayBaleHook() {
@@ -4069,7 +4187,7 @@ function startCornfieldCrossPlay() {
   game.playModePhase = null;
   game.state = "playing";
   positionForCornfieldCross();
-  prepareDefenseModeCpuPass("barnPlay");
+  prepareDefenseModeCpuPass("cornfieldCross");
 }
 
 function positionForSiloSlant() {
@@ -4375,12 +4493,15 @@ function updatePlayModeDiveRight(dt) {
 
     // Sack before the final handoff to the deep back.
     if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
-      resolvePlayModeTackle(player1, player1.x, { sack: true });
+      resolvePlayModeTackle(player1, player1.x);
       return;
     }
 
-    // Handoff to the 15-yard back.
-    if (ball.carrier === player1 && circleTouch(player1, offenseP4)) {
+    const meshPad = player1.radius + offenseP4.radius + 18;
+    if (
+      ball.carrier === player1 &&
+      (circleTouch(player1, offenseP4) || distance(player1.x, player1.y, offenseP4.x, offenseP4.y) <= meshPad)
+    ) {
       ball.carrier = offenseP4;
       game.playModePhase = "run";
       markRunAttemptStarted();
@@ -4513,6 +4634,7 @@ function resetOffensePlayTransientState() {
   game.passJamWindowMs = 0;
   game.passPlayRouteMs = 0;
   resetAllPassCoverTracks();
+  if (typeof resetEasyRunBlockState === "function") resetEasyRunBlockState();
 }
 
 /** Dispatch from horizontal play-select UI (filtered run/pass list, 4 per page). */
@@ -4563,6 +4685,18 @@ function startPlayFromSelect(playKey) {
       break;
     case "mudHoleDive":
       startMudHoleDivePlay();
+      break;
+    case "straightUp":
+      startStraightUpPlay();
+      break;
+    case "qbKeep":
+      startQbKeepPlay();
+      break;
+    case "quickOut":
+    case "flatPass":
+    case "goRoute":
+    case "checkDown":
+      startEasyPassPlay(playKey);
       break;
     default:
       // Safe fallback if an unknown play key slips through.
@@ -4645,13 +4779,15 @@ function updatePlayModeDiveLeft(dt) {
   }
 
   if (game.playModePhase === "handoff") {
-    // Pete runs the mirror arc — curving upward toward the top sideline
+    const dir = getOffenseDirection();
     const r = 5 * YARDS_TO_PIXELS;
     const cx = getOffsetX(game.playModeLineX, -5);
     const cy = FIELD.y + FIELD.height / 2;
     const arcLength = (Math.PI / 2) * r;
     game.playModeSweepHandoffT = Math.min(1, game.playModeSweepHandoffT + (lilTunnelPete.speed * dt) / arcLength);
-    const angle = Math.PI + game.playModeSweepHandoffT * (Math.PI / 2);
+    const startAngle = dir > 0 ? Math.PI : 0;
+    const endAngle = dir > 0 ? Math.PI + Math.PI / 2 : Math.PI / 2;
+    const angle = startAngle + game.playModeSweepHandoffT * (endAngle - startAngle);
     lilTunnelPete.x = cx + r * Math.cos(angle);
     lilTunnelPete.y = cy + r * Math.sin(angle);
 
@@ -4679,11 +4815,17 @@ function updatePlayModeDiveLeft(dt) {
     updateBallPosition();
 
     if (circleTackle(player1, player2) || circleTackle(player1, allyDonkey) || circleTackle(player1, cluckNorris)) {
-      resolvePlayModeTackle(player1, player1.x, { sack: true });
+      resolvePlayModeTackle(player1, player1.x);
       return;
     }
 
-    if (circleTouch(player1, allyHorse) || game.playModeSweepHandoffT >= 1) {
+    const meshPad = player1.radius + allyHorse.radius + 18;
+    if (
+      ball.carrier === player1 &&
+      (circleTouch(player1, allyHorse) ||
+        distance(player1.x, player1.y, allyHorse.x, allyHorse.y) <= meshPad ||
+        game.playModeSweepHandoffT >= 1)
+    ) {
       ball.carrier = allyHorse;
       game.playModePhase = "run";
       markRunAttemptStarted();
@@ -5316,7 +5458,7 @@ function setPlayDowned(downedX, { tackle = false, incomplete = false, sack = fal
   let resultType;
   if      (interception) resultType = "interception";
   else if (incomplete)   resultType = "incomplete";
-  else if (sack)         resultType = "sack";
+  else if (sack && PLAY_DEFINITIONS[playType]?.category !== "run") resultType = "sack";
   else if (yards > 0)    resultType = "gain";
   else if (yards < 0)    resultType = "loss";
   else                   resultType = "noGain";
@@ -5417,6 +5559,12 @@ function updatePlayMode(dt) {
   }
   if (game.playModeCurrentPlay === "diveLeft") {
     updatePlayModeDiveLeft(dt);
+    return;
+  }
+  if (typeof isEasyPassPlay === "function" && (
+    isEasyRunPlay(game.playModeCurrentPlay) || isEasyPassPlay(game.playModeCurrentPlay)
+  )) {
+    updateEasyPlayMode(dt);
     return;
   }
   updatePlayerInput(dt);
@@ -5668,7 +5816,7 @@ function updatePlayModeSweepRight(dt) {
     advanceSweepRbArcRight(dt);
     updateBallPosition();
     if (circleTackleByAnyDefender(player1)) {
-      resolvePlayModeTackle(player1, player1.x, { sack: true });
+      resolvePlayModeTackle(player1, player1.x);
       return;
     }
     if (game.playModeDefense === "A") {
@@ -5686,7 +5834,7 @@ function updatePlayModeSweepRight(dt) {
     return;
   }
   if (game.playModePhase === "toss") {
-    moveOffenseX(offenseP4, dt);
+    moveToward(offenseP4, ball.targetX, ball.targetY, offenseP4.speed, dt);
     clampPlayerToField(offenseP4);
     advancePlayModeSweepToss(dt);
     moveSweepDefenders(dt);
@@ -5741,7 +5889,7 @@ function updatePlayModeSweepLeft(dt) {
     advanceSweepRbArcLeft(dt);
     updateBallPosition();
     if (circleTackleByAnyDefender(player1)) {
-      resolvePlayModeTackle(player1, player1.x, { sack: true });
+      resolvePlayModeTackle(player1, player1.x);
       return;
     }
     if (game.playModeDefense === "A") {
@@ -5759,7 +5907,7 @@ function updatePlayModeSweepLeft(dt) {
     return;
   }
   if (game.playModePhase === "toss") {
-    offenseP4.y -= offenseP4.speed * dt;
+    moveToward(offenseP4, ball.targetX, ball.targetY, offenseP4.speed, dt);
     clampPlayerToField(offenseP4);
     advancePlayModeSweepToss(dt);
     moveSweepDefenders(dt);
@@ -6013,9 +6161,9 @@ function moveBarnDoorBootReceivers(dt) {
   const wrOutsideBreakX = clampPlayableX(game.playModeLineX + dir * 24 * YARDS_TO_PIXELS, lilTunnelPete.radius);
 
   if (game.barnDoorBootStage <= 2) {
-    moveToward(allyHorse, fakeRunX, fakeRunY, allyHorse.speed, dt);
+    runReceiverToLandmarkOrContinue(allyHorse, fakeRunX, fakeRunY, allyHorse.speed, dt);
   } else {
-    moveToward(allyHorse, rbLeakX, rbLeakY, allyHorse.speed, dt);
+    runReceiverToLandmarkOrContinue(allyHorse, rbLeakX, rbLeakY, allyHorse.speed, dt);
   }
 
   const inlineBlock = getDefenderInFrontOfBarnBootWr();
@@ -6040,7 +6188,11 @@ function moveBarnDoorBootReceivers(dt) {
     peteTy = wrOutsideY;
     peteSpd = lilTunnelPete.speed;
   }
-  moveToward(lilTunnelPete, peteTx, peteTy, peteSpd, dt);
+  if (inlineBlock || nearBlock) {
+    moveToward(lilTunnelPete, peteTx, peteTy, peteSpd, dt);
+  } else {
+    runReceiverToLandmarkOrContinue(lilTunnelPete, peteTx, peteTy, peteSpd, dt);
+  }
 
   clampPlayerToField(allyHorse);
   clampPlayerToField(lilTunnelPete);
@@ -6197,6 +6349,7 @@ function updateBarnDoorBootQbMotion(dt) {
     if (!reachedOneYdPast) {
       moveToward(player1, autoCrossLosX, player1.y, player1.speed, dt);
     } else {
+      markQbScramblePastLine();
       game.barnDoorBootStage = 3;
     }
     return;
@@ -6342,6 +6495,10 @@ function movePassPlayReceivers(dt, adjustTarget = null) {
     movePasturePopReceivers(dt, adjustTarget);
     return;
   }
+  if (typeof isEasyPassPlay === "function" && isEasyPassPlay(play)) {
+    moveEasyPassReceivers(dt, adjustTarget);
+    return;
+  }
   moveBarnPlayReceivers(dt, adjustTarget);
 }
 
@@ -6395,8 +6552,13 @@ function startPlayModePassThrow(tx, ty, preferredTarget = null) {
 
 function moveStandardPassReceiversInFlight(dt) {
   const target = game.passPlayTargetReceiver;
-  const tripsSevenPost = game.playModeCurrentPlay === "passRight" || game.playModeCurrentPlay === "passLeft";
-  const topTrips = game.playModeCurrentPlay === "passLeft";
+  const tripsSevenPost =
+    game.playModeCurrentPlay === "passRight" ||
+    game.playModeCurrentPlay === "passLeft" ||
+    game.playModeCurrentPlay === "fencePost";
+  const topTrips =
+    game.playModeCurrentPlay === "passLeft" ||
+    (game.playModeCurrentPlay === "fencePost" && getOffenseDirection() < 0);
   const playKey = game.playModeCurrentPlay;
 
   if (target === "horse") {
@@ -6545,7 +6707,7 @@ function movePassP4Route(playKey, dt, adjustTarget = null) {
     return;
   }
   if (playKey === "passRight" || playKey === "passLeft" || playKey === "fencePost") {
-    const tripsKey = playKey === "fencePost" ? "passRight" : playKey;
+    const tripsKey = getTripsPassPlayKey(playKey);
     const inRoute =
       typeof getTripsInRouteGeometry === "function"
         ? getTripsInRouteGeometry(tripsKey)
@@ -6631,6 +6793,14 @@ function resolveCurrentPlayPassFlight(dt) {
       movePassPlayReceivers(stepDt, game.passPlayTargetReceiver)
     );
   }
+  if (typeof isEasyPassPlay === "function" && isEasyPassPlay(playKey)) {
+    return resolveArcingPassFlight(dt, (stepDt) =>
+      moveEasyPassReceivers(stepDt, game.passPlayTargetReceiver)
+    );
+  }
+  if (playKey === "barnDoorBoot") {
+    return resolveArcingPassFlight(dt, (stepDt) => moveBarnDoorBootReceivers(stepDt));
+  }
   return resolveArcingPassFlight(dt, moveStandardPassReceiversInFlight);
 }
 
@@ -6643,6 +6813,7 @@ function updatePlayModePassRight(dt) {
   const { rushing } = getPassDefenders();
 
   if (tripsPass && game.playModePhase === "snap") {
+    tickPassRouteProgress(dt);
     game.playModePassSnapMs -= dt * 1000;
     // Keep center on LOS during shotgun snap; transfer ball on timer.
     offenseP5.x = game.playModeLineX;
@@ -6653,7 +6824,7 @@ function updatePlayModePassRight(dt) {
       updateBallPosition();
     } else {
       updateBallPosition();
-      moveTripsOutsideSevenPost(dt, null, game.playModeCurrentPlay === "passLeft");
+      moveTripsOutsideSevenPost(dt, null, getTripsPassPlayKey(game.playModeCurrentPlay) === "passLeft");
       moveTripsSlotCurlRoute(dt);
       movePassP4Route(game.playModeCurrentPlay, dt);
       movePassDefenders(dt, ball);
@@ -6695,13 +6866,10 @@ function updatePlayModePassRight(dt) {
         updateBallPosition();
         return;
       }
-    if (!game.passPlayCanThrow && hasOffenseScored(player1)) {
-        finishDriveTouchdown(player1);
-        return;
-    }
+    if (resolveQbCarrierTouchdownIfNeeded()) return;
 
     if (tripsPass) {
-      moveTripsOutsideSevenPost(dt, null, game.playModeCurrentPlay === "passLeft");
+      moveTripsOutsideSevenPost(dt, null, getTripsPassPlayKey(game.playModeCurrentPlay) === "passLeft");
       moveTripsSlotCurlRoute(dt);
       movePassP4Route(game.playModeCurrentPlay, dt);
       clampPlayerToField(offenseP4);
@@ -6809,6 +6977,7 @@ function updatePlayModePassLeft(dt) {
   const { rushing } = getPassDefenders();
 
   if (game.playModeCurrentPlay === "passLeft" && game.playModePhase === "snap") {
+    tickPassRouteProgress(dt);
     game.playModePassSnapMs -= dt * 1000;
     offenseP5.x = game.playModeLineX;
     offenseP5.y = FIELD.y + FIELD.height / 2;
@@ -6857,10 +7026,7 @@ function updatePlayModePassLeft(dt) {
         updateBallPosition();
         return;
       }
-    if (!game.passPlayCanThrow && hasOffenseScored(player1)) {
-        finishDriveTouchdown(player1);
-        return;
-    }
+    if (resolveQbCarrierTouchdownIfNeeded()) return;
 
     if (game.playModeCurrentPlay === "barnDoorBoot") {
       moveBarnDoorBootReceivers(dt);
@@ -7034,10 +7200,7 @@ function updatePlayModeBarnPlay(dt) {
         updateBallPosition();
         return;
       }
-    if (!game.passPlayCanThrow && hasOffenseScored(player1)) {
-        finishDriveTouchdown(player1);
-        return;
-    }
+    if (resolveQbCarrierTouchdownIfNeeded()) return;
 
     movePassPlayReceivers(dt);
     movePassSupportRoles(
@@ -7171,10 +7334,7 @@ function updatePlayModeScrambledEggs(dt) {
         updateBallPosition();
         return;
       }
-    if (!game.passPlayCanThrow && hasOffenseScored(player1)) {
-        finishDriveTouchdown(player1);
-        return;
-    }
+    if (resolveQbCarrierTouchdownIfNeeded()) return;
 
     moveScrambledEggsReceivers(dt);
     movePassSupportRoles(

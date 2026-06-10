@@ -37,7 +37,13 @@ const PLAY_FORMATION_MAP = {
   siloSlant: "shotgunDoublesTwoOL",
   pasturePop: "shotgunDoublesTwoOL",
   fencePost: "shotgunTrips",
-  mudHoleDive: "iProTwoOLWide"
+  mudHoleDive: "iProTwoOLWide",
+  straightUp: "iProTwoOLWide",
+  qbKeep: "powerThreeOL",
+  quickOut: "shotgunDoublesTwoOL",
+  flatPass: "shotgunDoublesTwoOL",
+  goRoute: "shotgunDoublesTwoOL",
+  checkDown: "shotgunDoublesTwoOL"
 };
 
 function resolveFormationY(lane, entity) {
@@ -105,7 +111,13 @@ const PLAY_SNAP_FROM = {
   siloSlant: "offenseP5",
   pasturePop: "offenseP5",
   fencePost: "offenseP5",
-  mudHoleDive: "player1"
+  mudHoleDive: "player1",
+  straightUp: "player1",
+  qbKeep: "player1",
+  quickOut: "offenseP5",
+  flatPass: "offenseP5",
+  goRoute: "offenseP5",
+  checkDown: "offenseP5"
 };
 
 const FORMATION_DIAGRAM_DOT = {
@@ -385,7 +397,8 @@ function getFormationForPlay(playKey) {
 
 function getTripsStrengthForPlay(playKey) {
   if (playKey === "passLeft" || playKey === "sweepLeft") return "left";
-  if (playKey === "passRight" || playKey === "sweepRight" || playKey === "fencePost") return "right";
+  if (playKey === "passRight" || playKey === "sweepRight") return "right";
+  if (playKey === "fencePost") return getOffenseDirection() > 0 ? "right" : "left";
   return "right";
 }
 
